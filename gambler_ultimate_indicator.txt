@@ -1,0 +1,2072 @@
+// built with PineScript Agents
+//@version=6
+indicator(
+     title            = "FW TRADER — TTQxMilana MSNR + SMT-Fill FVG + Orange MTOB + LunqFX Quasimodo QML + Legacy CRT + QT + SSMT + TOB + HMC",
+     shorttitle       = "FW MSNR•SMTF•MTOB•QML•CRT•QT",
+     overlay          = true,
+     max_boxes_count  = 500,
+     max_lines_count  = 500,
+     max_labels_count = 500,
+     max_polylines_count = 50,
+     max_bars_back    = 5000
+ )
+
+// ============================================================================
+// 0. GLOBAL FONT SIZE & TEXT SETTINGS
+// ============================================================================
+grpVisual = "0. Global Text & Font Size Settings"
+lblSizeInput     = input.string("Small", "Chart Label & Tag Font Size", options=["Tiny", "Small", "Normal", "Large"], group=grpVisual)
+ribSizeInput     = input.string("Small", "Cycle Ribbon & Dashboard Font Size", options=["Tiny", "Small", "Normal", "Large"], group=grpVisual)
+
+f_getFontSize(string sz) =>
+    sz == "Tiny" ? size.tiny : (sz == "Small" ? size.small : (sz == "Large" ? size.large : size.normal))
+
+txtSize = f_getFontSize(lblSizeInput)
+ribSize = f_getFontSize(ribSizeInput)
+
+// ============================================================================
+// 1. INPUTS & CONFIGURATION
+// ============================================================================
+grpQT = "1. Quarterly Theory (QT) & Namdev IST/NY Cycles"
+show90mRibbon    = input.bool(true, "Show 90-Minute Cycle Boxes (Q1-Q4 90m A/M/D/X)", group=grpQT)
+showMicroRibbon  = input.bool(true, "Show Micro Cycle Boxes (Q1-Q4 Micro)", group=grpQT)
+showPrevCycles   = input.bool(true, "Show Historical Cycle Boxes", group=grpQT)
+showQDividers    = input.bool(true, "Show Vertical Quarter Dividers", group=grpQT)
+showNamdevMove   = input.bool(true, "Highlight Namdev Major Movement Windows (IST 06:30/12:30/18:30)", group=grpQT)
+colQ1            = input.color(color.new(#9ba0a8, 12), "Q1 (Accumulation)", group=grpQT, inline="qc")
+colQ2            = input.color(color.new(#c87a7c, 12), "Q2 (Manipulation)", group=grpQT, inline="qc")
+colQ3            = input.color(color.new(#71a685, 12), "Q3 (Distribution)", group=grpQT, inline="qc")
+colQ4            = input.color(color.new(#738ec4, 12), "Q4 (Reversal/X)", group=grpQT, inline="qc")
+
+grpCRT = "2. Legacy Trading — Candle Range Theory (CRT & PO3)"
+showCRT          = input.bool(true, "Show HTF Candle Range Theory (CRT High / CRT Low / 50%)", group=grpCRT)
+crtTFMode        = input.string("Auto (Legacy TF Matrix)", "CRT Timeframe Selection", options=["Auto (Legacy TF Matrix)", "15", "30", "60", "240", "D", "W"], group=grpCRT, active=showCRT)
+showCRT50        = input.bool(true, "Show CRT 50% Equilibrium & 3rd Candle Open Line", group=grpCRT, active=showCRT)
+showCRTSignals   = input.bool(true, "Show Turtle Soup (TS), Inside Bar (IB) & C3 PO3 Entries", group=grpCRT, active=showCRT)
+onlyTimedCRT     = input.bool(false, "Filter H4 CRT by Timed Windows (1/5/9 AM & PM EST)", group=grpCRT, active=showCRT)
+colCRTHigh       = input.color(#1e222d, "CRT High/Low Line Color", group=grpCRT, inline="crtc")
+colCRTBox        = input.color(color.new(#787b86, 88), "CRT Range Shaded Box", group=grpCRT, inline="crtc")
+
+grpMSNR = "3. QML Engine (LunqFX Quasimodo)"
+showMSNRLines    = input.bool(true, "Enable Quasimodo QML Engine", group=grpMSNR)
+showQML          = input.bool(true, "Show Quasimodo QM (LS → Head → BOS → QML → Targets)", group=grpMSNR, inline="mt1", active=showMSNRLines)
+colQMLBuy        = input.color(#169c89, "QMLBUY Pill & Line Color (Teal)", group=grpMSNR, inline="qmlc")
+colQMLSell       = input.color(#ef5350, "QMLSELL Pill & Line Color (Coral Red)", group=grpMSNR, inline="qmlc")
+qmPivLen         = input.int(5, "QM Swing Strength", minval=2, maxval=20, group=grpMSNR, tooltip="Bars on each side that confirm a swing high or low. Higher = bigger, fewer patterns.")
+qmMinSweep       = input.float(0.1, "QM Min. Head Sweep (× ATR)", minval=0.0, maxval=5.0, step=0.05, group=grpMSNR, tooltip="How far the head must go beyond the left shoulder to count as a liquidity sweep.")
+qmZoneAtr        = input.float(0.25, "QML Zone Depth (× ATR)", minval=0.05, maxval=2.0, step=0.05, group=grpMSNR, tooltip="The QML zone runs from the left shoulder's extreme this far back toward price. A trade into the zone counts as a QML tap.")
+qmMaxWait        = input.int(60, "Bars to Wait for the QML Tap", minval=5, maxval=500, group=grpMSNR)
+qmMaxRun         = input.int(120, "Bars After the Tap", minval=5, maxval=1000, group=grpMSNR, tooltip="After this many bars without a target or failure the pattern is closed as expired.")
+qmShowLeg        = input.bool(true, "QM Pattern Legs (LS → H → BOS)", group=grpMSNR, active=showMSNRLines)
+qmShowZone       = input.bool(true, "QM QML Zone", group=grpMSNR, active=showMSNRLines)
+qmShowTgt        = input.bool(true, "QM Targets and Invalidation", group=grpMSNR, active=showMSNRLines)
+qmKeepN          = input.int(3, "QM Patterns Drawn", minval=1, maxval=20, group=grpMSNR, tooltip="Finished patterns older than this are removed from the chart. The track record keeps all of them.")
+qmAlBos          = input.bool(true, "Alert: QM formed (BOS)", group=grpMSNR)
+qmAlTap          = input.bool(true, "Alert: QML tapped", group=grpMSNR)
+qmAlRes          = input.bool(true, "Alert: target hit / failed", group=grpMSNR)
+
+// ============================================================================
+// 1B. MSNR BY TTQ & MILANA — SOURCE & TARGET ENGINE (D, H4, H1, M30, M15)
+// ============================================================================
+grpTTQ_Style     = "3B. MSNR by TTQ & Milana — Style & Timeframe Toggles"
+msnrTheme        = input.string("Light", "Theme Style", options=["Light", "Dark"], group=grpTTQ_Style)
+showTTQ_HUD      = input.bool(true, "Show MSNR by TTQxMilana Storyline Table (Top-Right)", group=grpTTQ_Style)
+showD_Lvl        = input.bool(true, "Show DAILY Levels", group=grpTTQ_Style)
+showH4_Lvl       = input.bool(true, "Show H4 Levels", group=grpTTQ_Style)
+showH1_Lvl       = input.bool(true, "Show H1 Levels", group=grpTTQ_Style)
+showM30_Lvl      = input.bool(true, "Show M30 Levels", group=grpTTQ_Style)
+showM15_Lvl      = input.bool(true, "Show M15 Levels", group=grpTTQ_Style)
+flipBrokenToSBR  = input.bool(false, "Flip Invalidated Source into SBR / RBS Baseline (Module 1 & 5)", group=grpTTQ_Style)
+maxSourcesPerTF  = input.int(5, "Max Active A/V Sources Per Timeframe", minval=1, maxval=12, group=grpTTQ_Style)
+
+grpTTQ_OCL       = "3C. MSNR by TTQ & Milana — OCL Settings (D, H4, H1, M30, M15)"
+showD_OCL        = input.bool(true, "Show Daily OCL", group=grpTTQ_OCL)
+showH4_OCL       = input.bool(true, "Show H4 OCL", group=grpTTQ_OCL)
+showH1_OCL       = input.bool(true, "Show H1 OCL", group=grpTTQ_OCL)
+showM30_OCL      = input.bool(true, "Show M30 OCL", group=grpTTQ_OCL)
+showM15_OCL      = input.bool(true, "Show M15 OCL", group=grpTTQ_OCL)
+dOCL_Lookback    = input.int(2, "Daily OCL Lookback", minval=1, maxval=5, group=grpTTQ_OCL)
+h4OCL_Lookback   = input.int(2, "H4 OCL Lookback", minval=1, maxval=5, group=grpTTQ_OCL)
+h1OCL_Lookback   = input.int(2, "H1 OCL Lookback", minval=1, maxval=5, group=grpTTQ_OCL)
+m30OCL_Lookback  = input.int(2, "M30 OCL Lookback", minval=1, maxval=5, group=grpTTQ_OCL)
+m15OCL_Lookback  = input.int(2, "M15 OCL Lookback", minval=1, maxval=5, group=grpTTQ_OCL)
+dOpenCol         = input.color(#00e676, "Daily Open Color", group=grpTTQ_OCL, inline="docl")
+dCloseCol        = input.color(#ff5252, "Daily Close Color", group=grpTTQ_OCL, inline="docl")
+h4OpenCol        = input.color(#00b0ff, "H4 Open Color", group=grpTTQ_OCL, inline="h4ocl")
+h4CloseCol       = input.color(#ff9100, "H4 Close Color", group=grpTTQ_OCL, inline="h4ocl")
+h1OpenCol        = input.color(#ab47bc, "H1 Open Color", group=grpTTQ_OCL, inline="h1ocl")
+h1CloseCol       = input.color(#5e35b1, "H1 Close Color", group=grpTTQ_OCL, inline="h1ocl")
+m30OpenCol       = input.color(#00acc1, "M30 Open Color", group=grpTTQ_OCL, inline="m30ocl")
+m30CloseCol      = input.color(#ec407a, "M30 Close Color", group=grpTTQ_OCL, inline="m30ocl")
+m15OpenCol       = input.color(#26a69a, "M15 Open Color", group=grpTTQ_OCL, inline="m15ocl")
+m15CloseCol      = input.color(#ef5350, "M15 Close Color", group=grpTTQ_OCL, inline="m15ocl")
+oclLineStyleIn   = input.string("Dotted", "OCL Line Style", options=["Dotted", "Dashed", "Solid"], group=grpTTQ_OCL)
+
+grpTTQ_LineLbl   = "3D. MSNR by TTQ & Milana — Line & Label Settings"
+freshLineWidth   = input.int(2, "Fresh Line Width", minval=1, maxval=5, group=grpTTQ_LineLbl)
+unfreshLineWidth = input.int(1, "Unfresh Line Width", minval=1, maxval=5, group=grpTTQ_LineLbl)
+unfreshTransp    = input.int(20, "Unfresh Transparency", minval=0, maxval=90, group=grpTTQ_LineLbl)
+hideUnfreshLvls  = input.bool(false, "Storyline Filter: Hide Unfresh Levels (Module 2 Friction Law)", group=grpTTQ_LineLbl)
+showTTQLabels    = input.bool(true, "Show Labels", group=grpTTQ_LineLbl)
+ttqLabelSizeIn   = input.string("Small", "Label Size", options=["Tiny", "Small", "Normal", "Large"], group=grpTTQ_LineLbl)
+showTTQPrice     = input.bool(false, "Show Price", group=grpTTQ_LineLbl)
+showTTQTF        = input.bool(true, "Show Timeframe", group=grpTTQ_LineLbl)
+showTTQType      = input.bool(true, "Show Type (A/V/OCL)", group=grpTTQ_LineLbl)
+showTTQStatus    = input.bool(false, "Show Status (•/◦)", group=grpTTQ_LineLbl)
+msnrRightOffset  = input.int(15, "MSNR Line Right Offset (Bars)", minval=3, maxval=50, group=grpTTQ_LineLbl)
+
+grpSSMT = "4. SSMT — Sequential SMT & Confirmation"
+showSSMT         = input.bool(true, "Show Graded SSMT Lines & Badges", group=grpSSMT)
+useAutoTriad     = input.bool(true, "Automatic Correlated Asset Triad", group=grpSSMT)
+customPeer1      = input.symbol("OANDA:XAGUSD", "Custom Comparison Asset 1", group=grpSSMT, active=not useAutoTriad)
+customPeer2      = input.symbol("TVC:DXY", "Custom Comparison Asset 2", group=grpSSMT, active=not useAutoTriad)
+customPeer3      = input.symbol("OANDA:XAUUSD", "Custom Comparison Asset 3", group=grpSSMT, active=not useAutoTriad)
+showPendingSSMT  = input.bool(true, "Show Pending SSMT Setups (•PENDING)", group=grpSSMT, active=showSSMT)
+ssmtConfirmMode  = input.string("tCISD", "SSMT Confirmation Mode", options=["tCISD", "QCISD", "Quarter Close"], group=grpSSMT, active=showSSMT)
+ssmtHistoryLimit = input.int(10, "Historical SSMT Display Limit", minval=2, maxval=30, group=grpSSMT, active=showSSMT)
+colBullSSMT      = input.color(#1b8a5a, "Bullish SSMT Color", group=grpSSMT, inline="sc")
+colBearSSMT      = input.color(#165b68, "Bearish SSMT Color", group=grpSSMT, inline="sc")
+
+// ============================================================================
+// 1C. SMT-FILL [ORACLE] FVG ENGINE SETTINGS (FROM NOTEBOOK SOURCES 10 & 12)
+// ============================================================================
+grpSMTF            = "4B. SMT-Fill [Oracle] FVG Engine (SMTF FVG)"
+enable_smt_fill    = input.bool(true, "Enable SMT-Fill FVG Engine?", group=grpSMTF)
+max_gaps           = input.int(20, "Maximum SMT-Fill Gaps", minval=1, maxval=100, group=grpSMTF, active=enable_smt_fill)
+box_extension      = input.int(3, "Box Extension (bars)", minval=0, maxval=50, group=grpSMTF, active=enable_smt_fill)
+show_bullish_gaps  = input.bool(true, "Bullish SMTF Gaps?", group=grpSMTF, inline="bullfvg", active=enable_smt_fill)
+bull_gap_color     = input.color(color.new(#089981, 86), "", group=grpSMTF, inline="bullfvg", active=enable_smt_fill)
+show_bearish_gaps  = input.bool(true, "Bearish SMTF Gaps?", group=grpSMTF, inline="bearfvg", active=enable_smt_fill)
+bear_gap_color     = input.color(color.new(#f23645, 86), "", group=grpSMTF, inline="bearfvg", active=enable_smt_fill)
+show_gap_border    = input.bool(false, "Show Gap Borders?", group=grpSMTF, inline="fvgborder", active=enable_smt_fill)
+gap_border_width   = input.int(1, "", minval=1, maxval=5, group=grpSMTF, inline="fvgborder", active=enable_smt_fill)
+show_smt_line      = input.bool(true, "SMT-F Divergence Line (CIC)?", group=grpSMTF, inline="smtfline", active=enable_smt_fill)
+smt_line_color     = input.color(color.new(color.gray, 0), "", group=grpSMTF, inline="smtfline", active=enable_smt_fill)
+smt_line_style     = input.string("Dotted", "", options=["Solid", "Dashed", "Dotted"], group=grpSMTF, inline="smtfline", active=enable_smt_fill)
+smt_line_width     = input.int(1, "", minval=1, maxval=5, group=grpSMTF, inline="smtfline", active=enable_smt_fill)
+show_asset_label   = input.bool(true, "Show Diverging Asset Label Inside FVG?", group=grpSMTF, inline="smtflbl", active=enable_smt_fill)
+label_text_color   = input.color(color.black, "Text Color", group=grpSMTF, inline="smtflbl", active=enable_smt_fill)
+label_position     = input.string("Right", "Label Position", options=["Left", "Center", "Right"], group=grpSMTF, active=enable_smt_fill)
+only_show_active   = input.bool(false, "Only Show Active Touching Gaps?", group=grpSMTF, active=enable_smt_fill)
+
+grpTOB = "5. True Orderblock (TOB — Inside HTF PSP Candle 2) & Orange MTOB Engine"
+showTOB          = input.bool(true, "Show True Orderblock (+TOB / -TOB CONFIRM)", group=grpTOB)
+requireTriadPSP  = input.bool(false, "Require Correlated Asset Color Divergence for PSP", group=grpTOB, active=showTOB)
+showTOBLine      = input.bool(true, "Show Horizontal TOB Open Trigger Line", group=grpTOB, active=showTOB)
+showC3C4Entry    = input.bool(true, "Mark Candle 3 & Candle 4 TOB Retest Entries", group=grpTOB, active=showTOB)
+showMTOB         = input.bool(true, "Show Order Blocks & Orange MTOB (Transferred)", group=grpTOB)
+dojiThreshold    = input.float(0.18, "MTOB Doji Threshold", minval=0.01, maxval=0.45, step=0.02, group=grpTOB, active=showMTOB)
+dispAtrMult      = input.float(0.85, "OB Displacement ATR Multiplier", minval=0.30, maxval=2.50, step=0.05, group=grpTOB, active=showMTOB)
+maxActiveMTOBs   = input.int(8, "Max Active OB / Orange MTOB Boxes", minval=2, maxval=20, group=grpTOB, active=showMTOB)
+colMTOBOrange    = input.color(#f5a623, "Transferred MTOB Color (Orange)", group=grpTOB, inline="mtobc")
+colBullOB        = input.color(#089981, "Initial Bull OB+ Color (Teal)", group=grpTOB, inline="mtobc")
+colBearOB        = input.color(#f23645, "Initial Bear OB- Color (Red)", group=grpTOB, inline="mtobc")
+
+grpHMC = "6. HMC On-Chart Session Boxes & Funding References"
+showHMCBoxes     = input.bool(true, "Show On-Chart HMC Institutional Session Boxes", group=grpHMC)
+showWinTDO       = input.bool(true, "TDO Window (00:00-00:30 NY)", group=grpHMC, inline="hw1", active=showHMCBoxes)
+showWinEU        = input.bool(true, "EU/RTGS (02:00-04:00 NY)", group=grpHMC, inline="hw1", active=showHMCBoxes)
+showWinFund      = input.bool(true, "Funding (04:00-07:00 NY)", group=grpHMC, inline="hw2", active=showHMCBoxes)
+showWinFed       = input.bool(true, "Fedwire (08:00-09:00 NY)", group=grpHMC, inline="hw2", active=showHMCBoxes)
+showWinDTCC_AM   = input.bool(true, "DTCC AM (09:00-09:45 NY)", group=grpHMC, inline="hw3", active=showHMCBoxes)
+showWinBRD       = input.bool(true, "BRD (12:00-13:00 NY)", group=grpHMC, inline="hw3", active=showHMCBoxes)
+showWinCLS       = input.bool(true, "CLS Settlement (13:00-15:00 NY)", group=grpHMC, inline="hw4", active=showHMCBoxes)
+showWinDTCC_PM   = input.bool(true, "DTCC PM (20:00-20:45 NY)", group=grpHMC, inline="hw4", active=showHMCBoxes)
+showDailySettle  = input.bool(true, "Daily Settlement Open (TDO Line)", group=grpHMC, inline="fl")
+showWeeklyReset  = input.bool(true, "Weekly Reset (TWO Line)", group=grpHMC, inline="fl")
+
+grpSym = "7. Gambler / FW Symmetry Zones (00:00-00:30 NY Anchor)"
+showGamblerZones = input.bool(true, "Show Origin, Shift & Extreme Symmetry Zones (Both Buy & Sell)", group=grpSym)
+zoneNamingStyle  = input.string("GAMBLER (GAMBLER ORIGIN / SHIFT / EXTREME)", "Zone Label Prefix", options=["GAMBLER (GAMBLER ORIGIN / SHIFT / EXTREME)", "FW (FW ORIGIN / FW SHIFT / FW EXTREME)"], group=grpSym, active=showGamblerZones)
+showOriginZone   = input.bool(true, "Show Origin Zone (Sell: -1 to -1.5 | Buy: 2 to 2.5)", group=grpSym, active=showGamblerZones)
+showShiftZone    = input.bool(true, "Show Shift Zone (Sell: -2.5 to -3 | Buy: 3.5 to 4)", group=grpSym, active=showGamblerZones)
+showExtremeZone  = input.bool(true, "Show Extreme Zone (Sell: -4 to -4.5 | Buy: 5 to 5.5)", group=grpSym, active=showGamblerZones)
+showSymPrices    = input.bool(true, "Show Exact Zone Price Range in Label", group=grpSym, active=showGamblerZones)
+removeInvalidSym = input.bool(false, "Delete Zone If Price Closes Beyond Outer Boundary", group=grpSym, active=showGamblerZones)
+colOriginSell    = input.color(color.new(#f9ebea, 15), "Sell Origin (-1..-1.5)", group=grpSym, inline="zsc")
+colShiftSell     = input.color(color.new(#f5ccd0, 15), "Sell Shift (-2.5..-3)", group=grpSym, inline="zsc")
+colExtremeSell   = input.color(color.new(#eb9da4, 15), "Sell Extreme (-4..-4.5)", group=grpSym, inline="zsc")
+colOriginBuy     = input.color(color.new(#d6eaf8, 15), "Buy Origin (2..2.5)", group=grpSym, inline="zbc")
+colShiftBuy      = input.color(color.new(#aed6f1, 15), "Buy Shift (3.5..4)", group=grpSym, inline="zbc")
+colExtremeBuy    = input.color(color.new(#85c1e9, 15), "Buy Extreme (5..5.5)", group=grpSym, inline="zbc")
+
+grpDash = "8. Market Bias, CRT, OCL Pairing & HMC Dashboard"
+showDashboard    = input.bool(true, "Show Market Bias & CRT/MSNR Status Dashboard", group=grpDash)
+dashLayout       = input.string("Desktop", "Dashboard Layout", options=["Desktop", "Mobile"], group=grpDash, active=showDashboard)
+dashPosInput     = input.string("Bottom Right", "Panel Position", options=["Top Right", "Bottom Right", "Bottom Left"], group=grpDash, active=showDashboard)
+
+// ============================================================================
+// 2. UDT DEFINITIONS (DECOUPLED IF BLOCKS & EXPLICIT int(na) RETURNS)
+// ============================================================================
+type CycleBoxObj
+    int startBar
+    int endBar
+    int tier
+    box b = na
+
+method deleteCycle(CycleBoxObj this) =>
+    if not na(this.b)
+        box.delete(this.b)
+    this.b := na
+    int(na)
+
+type HMCWindowBox
+    int startBar
+    int endBar
+    float hi
+    float lo
+    string title
+    color col
+    box b = na
+    label lbl = na
+
+method deleteHMC(HMCWindowBox this) =>
+    if not na(this.b)
+        box.delete(this.b)
+    if not na(this.lbl)
+        label.delete(this.lbl)
+    this.b   := na
+    this.lbl := na
+    int(na)
+
+method updateHMC(HMCWindowBox this, string sz) =>
+    if na(this.b)
+        this.b   := box.new(this.startBar, this.hi, this.endBar, this.lo, xloc=xloc.bar_index, bgcolor=this.col, border_color=color.new(this.col, 40), border_width=1)
+        this.lbl := label.new(this.startBar, this.hi, this.title, xloc=xloc.bar_index, style=label.style_none, textcolor=#2a2e39, size=sz)
+    if not na(this.b)
+        box.set_right(this.b, this.endBar)
+        box.set_top(this.b, this.hi)
+        box.set_bottom(this.b, this.lo)
+        label.set_xy(this.lbl, int(math.avg(this.startBar, this.endBar)), this.hi)
+        label.set_size(this.lbl, sz)
+    int(na)
+
+type CRTRangeObj
+    int startBar
+    int c1Time
+    float crtHigh
+    float crtLow
+    float crtMid
+    float c3Open
+    int stage
+    int insideCount
+    bool bullTS
+    bool bearTS
+    bool isTimedCRT
+    string tfTag
+    line hiLine = na
+    line loLine = na
+    line midLine = na
+    line c3Line = na
+    label hiLbl = na
+    label loLbl = na
+    label statusLbl = na
+    box rangeBox = na
+
+method deleteCRT(CRTRangeObj this) =>
+    if not na(this.hiLine)
+        line.delete(this.hiLine)
+    if not na(this.loLine)
+        line.delete(this.loLine)
+    if not na(this.midLine)
+        line.delete(this.midLine)
+    if not na(this.c3Line)
+        line.delete(this.c3Line)
+    if not na(this.hiLbl)
+        label.delete(this.hiLbl)
+    if not na(this.loLbl)
+        label.delete(this.loLbl)
+    if not na(this.statusLbl)
+        label.delete(this.statusLbl)
+    if not na(this.rangeBox)
+        box.delete(this.rangeBox)
+    this.hiLine    := na
+    this.loLine    := na
+    this.midLine   := na
+    this.c3Line    := na
+    this.hiLbl     := na
+    this.loLbl     := na
+    this.statusLbl := na
+    this.rangeBox  := na
+    int(na)
+
+// TTQ & Milana MSNR Source & OCL Level UDT
+type TTQMSNRLevel
+    string tfTag            // "D", "H4", "H1", "M30", "M15"
+    string kind             // "A", "V", "SBR", "RBS", "OCL-O", "OCL-C"
+    float  levelPrice
+    int    startTime
+    bool   isFresh = true
+    bool   isOCL   = false
+    bool   isFlipped = false
+    color  baseCol
+    line   ln = na
+    label  lb = na
+
+method deleteTTQ(TTQMSNRLevel this) =>
+    if not na(this.ln)
+        line.delete(this.ln)
+    if not na(this.lb)
+        label.delete(this.lb)
+    this.ln := na
+    this.lb := na
+    int(na)
+
+type SSMTObj
+    int x1
+    float y1
+    int x2
+    float y2
+    bool isBull
+    bool isConfirmed
+    string grade
+    string cycleTag
+    string pairText
+    float confirmLevel
+    line sLine = na
+    label sLbl = na
+    line cLine = na
+    label cLbl = na
+
+method deleteSSMT(SSMTObj this) =>
+    if not na(this.sLine)
+        line.delete(this.sLine)
+    if not na(this.sLbl)
+        label.delete(this.sLbl)
+    if not na(this.cLine)
+        line.delete(this.cLine)
+    if not na(this.cLbl)
+        label.delete(this.cLbl)
+    this.sLine := na
+    this.sLbl  := na
+    this.cLine := na
+    this.cLbl  := na
+    int(na)
+
+// SMT-FILL [ORACLE] FVG UDT (FROM NOTEBOOK SOURCES 10 & 12)
+type Gap
+    int idx
+    string side
+    float l
+    float l1
+    float l2
+    float l3
+    float h
+    float h1
+    float h2
+    float h3
+    float mid
+    float mid1
+    float mid2
+    float mid3
+    bool l_traded
+    bool l1_traded
+    bool l2_traded
+    bool l3_traded
+    bool h_traded
+    bool h1_traded
+    bool h2_traded
+    bool h3_traded
+    bool mid_traded
+    bool mid1_traded
+    bool mid2_traded
+    bool mid3_traded
+    box fvg = na
+    line cic_line_high = na
+    line cic_line_mid  = na
+    line cic_line_low  = na
+    int last_touching_bar
+
+method deleteGap(Gap this) =>
+    if not na(this.fvg)
+        box.delete(this.fvg)
+    if not na(this.cic_line_high)
+        line.delete(this.cic_line_high)
+    if not na(this.cic_line_mid)
+        line.delete(this.cic_line_mid)
+    if not na(this.cic_line_low)
+        line.delete(this.cic_line_low)
+    this.fvg := na
+    this.cic_line_high := na
+    this.cic_line_mid  := na
+    this.cic_line_low  := na
+    int(na)
+
+type TrueOB
+    int startBar
+    float top
+    float bottom
+    float openTrigger
+    float pspInvalid
+    bool isBull
+    bool isConfirmed
+    bool entryTriggered
+    int htfCandleCount
+    box b = na
+    line trigLine = na
+    label trigLbl = na
+    label entryLbl = na
+
+method deleteTOB(TrueOB this) =>
+    if not na(this.b)
+        box.delete(this.b)
+    if not na(this.trigLine)
+        line.delete(this.trigLine)
+    if not na(this.trigLbl)
+        label.delete(this.trigLbl)
+    if not na(this.entryLbl)
+        label.delete(this.entryLbl)
+    this.b        := na
+    this.trigLine := na
+    this.trigLbl  := na
+    this.entryLbl := na
+    int(na)
+
+type GamblerZone
+    int startBar
+    float top
+    float bottom
+    float midPrice
+    float invalidPrice
+    bool isSell
+    bool isActive
+    string labelText
+    color bgCol
+    box zBox = na
+    line midLn = na
+
+method deleteSym(GamblerZone this) =>
+    if not na(this.zBox)
+        box.delete(this.zBox)
+    if not na(this.midLn)
+        line.delete(this.midLn)
+    this.zBox  := na
+    this.midLn := na
+    int(na)
+
+// RESTORED ORIGINAL ORANGE MTOB UDT FROM YOUR NOTEBOOK (Sources 10, 11 & 12)
+type MTOB
+    int creationBar
+    float top
+    float bottom
+    bool isTested
+    int transferBar
+    bool isBullish = true
+    int candidateBar = na
+    float candidateTop = na
+    float candidateBot = na
+    bool hasCandidate = false
+    string confluenceTag = ""
+    box obBox = na
+    label obLbl = na
+
+method deleteMTOB(MTOB this) =>
+    if not na(this.obBox)
+        box.delete(this.obBox)
+    if not na(this.obLbl)
+        label.delete(this.obLbl)
+    this.obBox := na
+    this.obLbl := na
+    int(na)
+
+method drawMTOB(MTOB this, int rightBar, string sz, color orangeCol, color bullCol, color bearCol) =>
+    anchorBar = this.isTested and not na(this.transferBar) ? this.transferBar : this.creationBar
+    baseColor = this.isTested ? color.new(orangeCol, 75) : (this.isBullish ? color.new(bullCol, 80) : color.new(bearCol, 80))
+    borderCol = this.isTested ? orangeCol : (this.isBullish ? bullCol : bearCol)
+    baseTitle = this.isTested ? (this.isBullish ? "+MTOB (Transferred)" : "-MTOB (Transferred)") : (this.isBullish ? "Bull OB+" : "Bear OB-")
+    boxTxt    = this.confluenceTag != "" ? (baseTitle + " • " + this.confluenceTag) : baseTitle
+    txtCol    = this.isTested ? #1e222d : color.black
+
+    if na(this.obBox)
+        this.obBox := box.new(left=anchorBar, top=this.top, right=rightBar, bottom=this.bottom, xloc=xloc.bar_index, bgcolor=baseColor, border_color=borderCol, border_width=1, text=boxTxt, text_size=sz, text_color=txtCol, text_halign=text.align_right)
+    else
+        box.set_left(this.obBox, anchorBar)
+        box.set_right(this.obBox, rightBar)
+        box.set_top(this.obBox, this.top)
+        box.set_bottom(this.obBox, this.bottom)
+        box.set_bgcolor(this.obBox, baseColor)
+        box.set_border_color(this.obBox, borderCol)
+        box.set_text(this.obBox, boxTxt)
+        box.set_text_color(this.obBox, txtCol)
+        box.set_text_size(this.obBox, sz)
+    int(na)
+
+// ============================================================================
+// 3. STORAGE ARRAYS & GLOBAL TIMEFRAME MATRIX HELPERS
+// ============================================================================
+var array<CycleBoxObj>  cycleBoxes90m   = array.new<CycleBoxObj>()
+var array<CycleBoxObj>  cycleBoxesMicro = array.new<CycleBoxObj>()
+var array<line>         cycleDividers   = array.new<line>()
+var array<HMCWindowBox> hmcBoxList      = array.new<HMCWindowBox>()
+var array<TTQMSNRLevel> msnrSources     = array.new<TTQMSNRLevel>()
+var array<TTQMSNRLevel> msnrOCLs        = array.new<TTQMSNRLevel>()
+var array<SSMTObj>      ssmtList        = array.new<SSMTObj>()
+var array<Gap>          gaps            = array.new<Gap>()
+var array<TrueOB>       tobZones        = array.new<TrueOB>()
+var array<GamblerZone>  gamblerZones    = array.new<GamblerZone>()
+var array<MTOB>         mtobArray       = array.new<MTOB>()
+
+atr14     = ta.atr(14)
+atr50     = nz(ta.atr(50), nz(atr14, syminfo.mintick * 20))
+safeAtr   = nz(atr14, syminfo.mintick * 20)
+isBull    = close > open
+isBear    = close < open
+bodyHi    = math.max(open, close)
+bodyLo    = math.min(open, close)
+bodySz    = bodyHi - bodyLo
+fullRng   = high - low
+isDojiBar = fullRng > 0 ? (bodySz / fullRng) <= dojiThreshold : true
+isDisplacement = bodySz >= safeAtr * dispAtrMult
+
+f_getLineStyle(string style) =>
+    style == "Solid" ? line.style_solid : (style == "Dashed" ? line.style_dashed : line.style_dotted)
+
+f_getTextAlign(string pos) =>
+    pos == "Left" ? text.align_left : (pos == "Center" ? text.align_center : text.align_right)
+
+// Exact Timeframe Ladder Matching image_f52a3a.jpg:
+// On 15m Chart: LTF2 = 1m, LTF1 = 3m, Chart = 15m, HTF1 = 1H, HTF2 = 4H
+f_getDynamicTFs() =>
+    string ltf2 = "1"
+    string ltf1 = "3"
+    string htf1 = "60"
+    string htf2 = "240"
+    if timeframe.isminutes
+        m = timeframe.multiplier
+        if m <= 1
+            ltf2 := "1", ltf1 := "1", htf1 := "3", htf2 := "15"
+        else if m <= 3
+            ltf2 := "1", ltf1 := "1", htf1 := "15", htf2 := "60"
+        else if m <= 5
+            ltf2 := "1", ltf1 := "3", htf1 := "15", htf2 := "60"
+        else if m <= 15
+            ltf2 := "1", ltf1 := "3", htf1 := "60", htf2 := "240"
+        else if m <= 30
+            ltf2 := "3", ltf1 := "15", htf1 := "60", htf2 := "240"
+        else if m <= 60
+            ltf2 := "5", ltf1 := "15", htf1 := "240", htf2 := "D"
+        else
+            ltf2 := "15", ltf1 := "60", htf1 := "D", htf2 := "W"
+    else
+        ltf2 := "60", ltf1 := "240", htf1 := "W", htf2 := "M"
+    [ltf2, ltf1, timeframe.period, htf1, htf2]
+
+[tf_L2, tf_L1, tf_Chart, tf_H1, tf_H2] = f_getDynamicTFs()
+
+f_prettyTF(string tf) =>
+    string out = tf
+    if tf == "1" or tf == "3" or tf == "5" or tf == "15" or tf == "30" or tf == "45"
+        out := tf + "m"
+    else if tf == "60"
+        out := "1H"
+    else if tf == "120"
+        out := "2H"
+    else if tf == "240"
+        out := "4H"
+    else if tf == "D" or tf == "1D"
+        out := "1D"
+    else if tf == "W" or tf == "1W"
+        out := "1W"
+    out
+
+f_getLegacyCRTTF() =>
+    string res = "240"
+    if crtTFMode != "Auto (Legacy TF Matrix)"
+        res := crtTFMode
+    else if timeframe.isminutes
+        if timeframe.multiplier <= 1
+            res := "15"
+        else if timeframe.multiplier <= 5
+            res := "60"
+        else if timeframe.multiplier <= 30
+            res := "240"
+        else if timeframe.multiplier <= 60
+            res := "D"
+        else
+            res := "W"
+    else
+        res := "M"
+    res
+
+activeCRTTF = f_getLegacyCRTTF()
+
+f_getParentPSPTF() =>
+    string res = "15"
+    if timeframe.isminutes
+        if timeframe.multiplier <= 1
+            res := "5"
+        else if timeframe.multiplier <= 5
+            res := "15"
+        else if timeframe.multiplier <= 15
+            res := "60"
+        else if timeframe.multiplier <= 60
+            res := "240"
+        else
+            res := "D"
+    else
+        res := "W"
+    res
+
+pspParentTF = f_getParentPSPTF()
+
+f_cleanTicker(string sym) =>
+    colonIdx = str.pos(sym, ":")
+    base = colonIdx >= 0 ? str.substring(sym, colonIdx + 1, str.length(sym)) : sym
+    str.replace_all(str.replace_all(base, "1!", ""), ".P", "")
+
+getSymbolOnly(string sym) =>
+    colonPos = str.pos(sym, ":")
+    result = colonPos >= 0 ? str.substring(sym, colonPos + 1, str.length(sym)) : sym
+    result := str.replace_all(str.replace_all(str.replace_all(result, "1!", ""), "USD", ""), ".USD", "")
+    result
+
+f_getAutoTriad() =>
+    t = str.upper(syminfo.ticker)
+    string a1 = "OANDA:XAUUSD"
+    string a2 = "OANDA:XAGUSD"
+    string a3 = "TVC:DXY"
+    if str.contains(t, "NAS") or str.contains(t, "US100") or str.contains(t, "NQ") or str.contains(t, "SPX") or str.contains(t, "US500") or str.contains(t, "ES") or str.contains(t, "US30") or str.contains(t, "YM")
+        a1 := "CAPITALCOM:US100"
+        a2 := "CAPITALCOM:US500"
+        a3 := "CAPITALCOM:US30"
+    else if str.contains(t, "BTC") or str.contains(t, "ETH") or str.contains(t, "SOL") or str.contains(t, "XRP")
+        a1 := "BINANCE:BTCUSDT"
+        a2 := "BINANCE:ETHUSDT"
+        a3 := "BINANCE:SOLUSDT"
+    else if str.contains(t, "EUR") or str.contains(t, "GBP") or str.contains(t, "AUD") or str.contains(t, "NZD") or str.contains(t, "DXY") or str.contains(t, "CAD") or str.contains(t, "CHF") or str.contains(t, "JPY")
+        a1 := "OANDA:EURUSD"
+        a2 := "OANDA:GBPUSD"
+        a3 := "OANDA:AUDUSD"
+    else if str.contains(t, "OIL") or str.contains(t, "WTI") or str.contains(t, "CL") or str.contains(t, "UKOIL")
+        a1 := "TVC:USOIL"
+        a2 := "TVC:UKOIL"
+        a3 := "OANDA:XAUUSD"
+    [a1, a2, a3]
+
+[tri1, tri2, tri3] = f_getAutoTriad()
+chartClean = f_cleanTicker(syminfo.tickerid)
+peerSym1   = useAutoTriad ? (f_cleanTicker(tri1) == chartClean ? tri2 : tri1) : customPeer1
+peerSym2   = useAutoTriad ? ((f_cleanTicker(tri2) == chartClean or peerSym1 == tri2) ? tri3 : tri2) : customPeer2
+peerSym3   = useAutoTriad ? ((f_cleanTicker(tri3) == chartClean or peerSym1 == tri3 or peerSym2 == tri3) ? tri1 : tri3) : customPeer3
+
+// Consolidated Triad Security Calls (feeds both SSMT/PSP and SMT-Fill [Oracle] FVG Engine)
+[p1O, p1H, p1L, p1C] = request.security(peerSym1, timeframe.period, [open, high, low, close], lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[p2O, p2H, p2L, p2C] = request.security(peerSym2, timeframe.period, [open, high, low, close], lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[p3O, p3H, p3L, p3C] = request.security(peerSym3, timeframe.period, [open, high, low, close], lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+hasP1 = not na(p1H) and not na(p1L)
+hasP2 = not na(p2H) and not na(p2L)
+hasP3 = not na(p3H) and not na(p3L)
+
+// ============================================================================
+// 4. MODULE 1: QUARTERLY THEORY (90m A/M/D/X + MICRO) & NAMDEV IST SESSIONS
+// ============================================================================
+nyH   = hour(time, "America/New_York")
+nyM   = minute(time, "America/New_York")
+nyDow = dayofweek(time, "America/New_York")
+
+istH    = hour(time, "Asia/Kolkata")
+istM    = minute(time, "Asia/Kolkata")
+istMins = istH * 60 + istM
+inNamdevMove = showNamdevMove and ((istMins >= 390 and istMins < 480) or (istMins >= 750 and istMins < 840) or (istMins >= 1110 and istMins < 1200))
+bgcolor(inNamdevMove ? color.new(#ffd54f, 92) : na, title="Namdev Major Movement Timing (GMT+5:30)")
+
+minsFrom1800 = ((nyH >= 18 ? nyH - 18 : nyH + 6) * 60) + nyM
+dailyQ       = minsFrom1800 < 360 ? 1 : (minsFrom1800 < 720 ? 2 : (minsFrom1800 < 1080 ? 3 : 4))
+minsInDailyQ = minsFrom1800 % 360
+q90          = int(math.floor(minsInDailyQ / 90)) + 1
+minsIn90     = minsInDailyQ % 90
+qMicro       = int(math.floor(minsIn90 / 22.5)) + 1
+
+amdxPhaseLetter = q90 == 1 ? "A" : (q90 == 2 ? "M" : (q90 == 3 ? "D" : "X"))
+q90LabelText    = "Q" + str.tostring(q90) + " 90m\n" + amdxPhaseLetter
+qMicroLabelText = "Q" + str.tostring(qMicro) + " Micro"
+
+q90Color   = q90 == 1 ? colQ1 : (q90 == 2 ? colQ2 : (q90 == 3 ? colQ3 : colQ4))
+microColor = qMicro == 1 ? colQ1 : (qMicro == 2 ? colQ2 : (qMicro == 3 ? colQ3 : colQ4))
+
+isNewDailyQ = dailyQ != dailyQ[1] or bar_index == 0
+isNew90m    = q90 != q90[1] or isNewDailyQ
+isNewMicro  = qMicro != qMicro[1] or isNew90m
+
+if timeframe.isintraday
+    if showQDividers and isNewDailyQ and bar_index > 0
+        dl = line.new(bar_index, low, bar_index, high + safeAtr, xloc=xloc.bar_index, extend=extend.both, color=color.new(#787b86, 45), style=line.style_dashed, width=1)
+        array.push(cycleDividers, dl)
+        if array.size(cycleDividers) > 20
+            line.delete(array.shift(cycleDividers))
+
+    if show90mRibbon
+        create90 = isNew90m or array.size(cycleBoxes90m) == 0
+        if create90
+            if not showPrevCycles and isNewDailyQ
+                for cb in cycleBoxes90m
+                    cb.deleteCycle()
+                array.clear(cycleBoxes90m)
+            b90 = box.new(bar_index, high, bar_index, low, xloc=xloc.bar_index, bgcolor=q90Color, border_color=color.new(#5d606b, 40), border_width=1, text=q90LabelText, text_color=color.black, text_size=ribSize, text_halign=text.align_center, text_valign=text.align_center)
+            array.push(cycleBoxes90m, CycleBoxObj.new(bar_index, bar_index, 1, b90))
+            if array.size(cycleBoxes90m) > (showPrevCycles ? 24 : 4)
+                old90 = array.shift(cycleBoxes90m)
+                old90.deleteCycle()
+        if not create90 and array.size(cycleBoxes90m) > 0
+            curr90 = array.get(cycleBoxes90m, array.size(cycleBoxes90m) - 1)
+            curr90.endBar := bar_index
+            box.set_right(curr90.b, bar_index)
+            box.set_text_size(curr90.b, ribSize)
+
+    if showMicroRibbon and timeframe.multiplier <= 15
+        if isNew90m
+            for mb in cycleBoxesMicro
+                mb.deleteCycle()
+            array.clear(cycleBoxesMicro)
+        createMic = isNewMicro or array.size(cycleBoxesMicro) == 0
+        if createMic
+            bMic = box.new(bar_index, high, bar_index, low, xloc=xloc.bar_index, bgcolor=microColor, border_color=color.new(#5d606b, 40), border_width=1, text=qMicroLabelText, text_color=color.black, text_size=ribSize, text_halign=text.align_center, text_valign=text.align_center)
+            array.push(cycleBoxesMicro, CycleBoxObj.new(bar_index, bar_index, 2, bMic))
+            if array.size(cycleBoxesMicro) > 8
+                oldMic = array.shift(cycleBoxesMicro)
+                oldMic.deleteCycle()
+        if not createMic and array.size(cycleBoxesMicro) > 0
+            currMic = array.get(cycleBoxesMicro, array.size(cycleBoxesMicro) - 1)
+            currMic.endBar := bar_index
+            box.set_right(currMic.b, bar_index)
+            box.set_text_size(currMic.b, ribSize)
+
+visHigh = ta.highest(high, 220)
+visLow  = ta.lowest(low, 220)
+visSpan = math.max(visHigh - visLow, safeAtr * 8)
+
+if barstate.islast and timeframe.isintraday
+    bandHeight = visSpan * 0.055
+    top90      = visHigh + visSpan * 0.08
+    bot90      = top90 - bandHeight
+    topMicro   = bot90 - (visSpan * 0.008)
+    botMicro   = topMicro - (bandHeight * 0.88)
+    for cb in cycleBoxes90m
+        box.set_top(cb.b, top90)
+        box.set_bottom(cb.b, bot90)
+    for mb in cycleBoxesMicro
+        box.set_top(mb.b, topMicro)
+        box.set_bottom(mb.b, botMicro)
+
+// ============================================================================
+// 5. MODULE 2: LEGACY TRADING — CANDLE RANGE THEORY (CRT, PO3, INSIDE BAR, TS)
+// ============================================================================
+f_crtHTFData() =>
+    [open, high, low, close, open[1], high[1], low[1], close[1], time[1], hour(time[1], "America/New_York")]
+
+[c0_O, c0_H, c0_L, c0_C, c1_O, c1_H, c1_L, c1_C, c1_T, c1_NYH] = request.security(syminfo.tickerid, activeCRTTF, f_crtHTFData(), lookahead=barmerge.lookahead_off)
+
+var CRTRangeObj activeCRT = na
+isNewCRTCandle = ta.change(c1_T) != 0 and not na(c1_H) and not na(c1_L)
+
+isTimedH4Bar = (c1_NYH == 1 or c1_NYH == 5 or c1_NYH == 9 or c1_NYH == 13 or c1_NYH == 17 or c1_NYH == 21)
+isTimedTSNow = (nyH == 1 or nyH == 3 or nyH == 6 or nyH == 9)
+
+f_spawnCRTRange(float rHi, float rLo, int rTime, bool timedFlag, string tfStr) =>
+    midP = (rHi + rLo) * 0.5
+    hLn  = line.new(bar_index - 1, rHi, bar_index, rHi, xloc=xloc.bar_index, color=colCRTHigh, style=line.style_solid, width=1)
+    lLn  = line.new(bar_index - 1, rLo, bar_index, rLo, xloc=xloc.bar_index, color=colCRTHigh, style=line.style_solid, width=1)
+    mLn  = showCRT50 ? line.new(bar_index - 1, midP, bar_index, midP, xloc=xloc.bar_index, color=color.new(colCRTHigh, 45), style=line.style_dotted, width=1) : na
+    hLb  = label.new(bar_index, rHi, "CRT High (" + tfStr + ")", xloc=xloc.bar_index, style=label.style_none, textcolor=colCRTHigh, size=txtSize)
+    lLb  = label.new(bar_index, rLo, "CRT Low (" + tfStr + ")", xloc=xloc.bar_index, style=label.style_none, textcolor=colCRTHigh, size=txtSize)
+    rBx  = box.new(bar_index - 1, rHi, bar_index, rLo, xloc=xloc.bar_index, bgcolor=colCRTBox, border_color=color.new(colCRTHigh, 75), border_width=1)
+    CRTRangeObj.new(bar_index - 1, rTime, rHi, rLo, midP, na, 1, 0, false, false, timedFlag, tfStr, hLn, lLn, mLn, na, hLb, lLb, na, rBx)
+
+if showCRT and isNewCRTCandle
+    wasEmptyCRT = na(activeCRT)
+    if wasEmptyCRT
+        passTiming = not onlyTimedCRT or isTimedH4Bar
+        if passTiming
+            activeCRT := f_spawnCRTRange(c1_H, c1_L, c1_T, isTimedH4Bar, activeCRTTF)
+
+    if not wasEmptyCRT and not na(activeCRT)
+        isInsideBar  = c1_H <= activeCRT.crtHigh and c1_L >= activeCRT.crtLow
+        sweptLowTS   = c1_L < activeCRT.crtLow and c1_C >= activeCRT.crtLow and c1_C <= activeCRT.crtHigh
+        sweptHighTS  = c1_H > activeCRT.crtHigh and c1_C <= activeCRT.crtHigh and c1_C >= activeCRT.crtLow
+        fullBreakout = c1_C > activeCRT.crtHigh or c1_C < activeCRT.crtLow
+
+        doInside = isInsideBar and activeCRT.stage == 1
+        doTS     = not doInside and (sweptLowTS or sweptHighTS) and activeCRT.stage <= 2
+        doReset  = not doInside and not doTS and (fullBreakout or activeCRT.stage == 3)
+
+        if doInside
+            activeCRT.insideCount += 1
+            if showCRTSignals
+                label.set_text(activeCRT.hiLbl, "CRT High (" + activeCRT.tfTag + " • IB x" + str.tostring(activeCRT.insideCount) + ")")
+
+        if doTS
+            activeCRT.stage  := 3
+            activeCRT.bullTS := sweptLowTS
+            activeCRT.bearTS := sweptHighTS
+            activeCRT.c3Open := open
+            if showCRT50
+                line.delete(activeCRT.c3Line)
+                activeCRT.c3Line := line.new(bar_index, open, bar_index + 2, open, xloc=xloc.bar_index, color=sweptLowTS ? #089981 : #e53935, style=line.style_dashed, width=1)
+            if showCRTSignals
+                tsText = sweptLowTS ? ("CRT Bull TS ✓\nBuy < C3 Open (" + str.tostring(open, format.mintick) + ")") : ("CRT Bear TS ✓\nSell > C3 Open (" + str.tostring(open, format.mintick) + ")")
+                tsY    = sweptLowTS ? activeCRT.crtLow : activeCRT.crtHigh
+                label.delete(activeCRT.statusLbl)
+                activeCRT.statusLbl := label.new(bar_index, tsY, tsText, xloc=xloc.bar_index, style=label.style_none, textcolor=sweptLowTS ? #089981 : #e53935, size=txtSize)
+
+        if doReset
+            activeCRT.deleteCRT()
+            activeCRT := f_spawnCRTRange(c1_H, c1_L, c1_T, isTimedH4Bar, activeCRTTF)
+
+if showCRT and not na(activeCRT)
+    line.set_x2(activeCRT.hiLine, bar_index + 3)
+    line.set_x2(activeCRT.loLine, bar_index + 3)
+    label.set_x(activeCRT.hiLbl, bar_index + 3)
+    label.set_x(activeCRT.loLbl, bar_index + 3)
+    label.set_size(activeCRT.hiLbl, txtSize)
+    label.set_size(activeCRT.loLbl, txtSize)
+    if not na(activeCRT.statusLbl)
+        label.set_size(activeCRT.statusLbl, txtSize)
+    if not na(activeCRT.midLine)
+        line.set_x2(activeCRT.midLine, bar_index + 3)
+    if not na(activeCRT.c3Line)
+        line.set_x2(activeCRT.c3Line, bar_index + 3)
+    if not na(activeCRT.rangeBox)
+        box.set_right(activeCRT.rangeBox, bar_index)
+
+    if activeCRT.stage == 1 and (low < activeCRT.crtLow and close > activeCRT.crtLow)
+        activeCRT.stage  := 2
+        activeCRT.bullTS := true
+        if showCRTSignals
+            tTag = isTimedTSNow ? "Timed CRT Bull TS ▲ (CSD Watch)" : "CRT Bull TS ▲"
+            label.delete(activeCRT.statusLbl)
+            activeCRT.statusLbl := label.new(bar_index, low - safeAtr * 0.15, tTag, xloc=xloc.bar_index, style=label.style_none, textcolor=#089981, size=txtSize)
+
+    if activeCRT.stage == 1 and (high > activeCRT.crtHigh and close < activeCRT.crtHigh)
+        activeCRT.stage  := 2
+        activeCRT.bearTS := true
+        if showCRTSignals
+            tTag = isTimedTSNow ? "Timed CRT Bear TS ▼ (CSD Watch)" : "CRT Bear TS ▼"
+            label.delete(activeCRT.statusLbl)
+            activeCRT.statusLbl := label.new(bar_index, high + safeAtr * 0.20, tTag, xloc=xloc.bar_index, style=label.style_none, textcolor=#e53935, size=txtSize)
+
+// ============================================================================
+// 6. MODULE 3: QML ENGINE — LunqFX QUASIMODO LOGIC (CONFIRMED PIVOTS, CLOSED-BAR STATE MACHINE)
+// ============================================================================
+qmBgLum = 0.2126 * color.r(chart.bg_color) + 0.7152 * color.g(chart.bg_color) + 0.0722 * color.b(chart.bg_color)
+qmLight = qmBgLum > 128
+qmUp    = colQMLBuy
+qmDn    = colQMLSell
+qmWH    = qmLight ? #1A1D24 : #F2F4F8     // structure lines / T2 pill
+qmOnWH  = qmLight ? #FFFFFF : #0A0C12     // text that sits on the qmWH pill
+qmGrey  = qmLight ? #8A8F9C : #6B7080
+qmPanel = qmLight ? #FFFFFF : #0A0C12
+qmNone  = color.new(color.black, 100)
+
+qmPx(float v) =>
+    str.tostring(v, format.mintick)
+
+qmPct(int a, int b) =>
+    b > 0 ? str.tostring(a * 100.0 / b, "0") + "%" : "—"
+
+// ---- Alternating confirmed swings ----
+qmPh   = ta.pivothigh(high, qmPivLen, qmPivLen)
+qmPl   = ta.pivotlow(low, qmPivLen, qmPivLen)
+qmPBar = bar_index - qmPivLen
+
+var array<int>   qmSwT = array.new_int()     // 1 high, -1 low
+var array<float> qmSwP = array.new_float()
+var array<int>   qmSwB = array.new_int()
+
+qmAddSwing(int t, float p, int b) =>
+    n = array.size(qmSwT)
+    if n > 0 and array.get(qmSwT, n - 1) == t
+        if t == 1 ? p > array.get(qmSwP, n - 1) : p < array.get(qmSwP, n - 1)
+            array.set(qmSwP, n - 1, p)
+            array.set(qmSwB, n - 1, b)
+    else
+        array.push(qmSwT, t)
+        array.push(qmSwP, p)
+        array.push(qmSwB, b)
+        if array.size(qmSwT) > 20
+            array.shift(qmSwT)
+            array.shift(qmSwP)
+            array.shift(qmSwB)
+    0
+
+if not na(qmPh) and not na(qmPl)
+    if math.abs(qmPh - close[qmPivLen]) > math.abs(close[qmPivLen] - qmPl)
+        qmAddSwing(1, qmPh, qmPBar)
+    else
+        qmAddSwing(-1, qmPl, qmPBar)
+else if not na(qmPh)
+    qmAddSwing(1, qmPh, qmPBar)
+else if not na(qmPl)
+    qmAddSwing(-1, qmPl, qmPBar)
+
+// ---- QM state ----
+var int   qmStage = 0
+var int   qmDir   = 0
+var float qmLsP   = na
+var int   qmLsB   = na
+var float qmMidP  = na
+var int   qmMidB  = na
+var float qmHdP   = na
+var int   qmHdB   = na
+var float qmExt   = na
+var int   qmBosB  = na
+var int   qmTapB  = na
+var float qmZFar  = na
+var float qmT1    = na
+var float qmT2    = na
+var int   qmHitMax  = 0
+var int   qmUsedHead = na
+
+var line  qmLn   = na
+var box   qmBx   = na
+var label qmLb   = na
+var line  qmT1Ln = na
+var line  qmT2Ln = na
+var line  qmIvLn = na
+var label qmT1Lb = na
+var label qmT2Lb = na
+
+// track record: index 0 bullish, 1 bearish
+var array<int> qmRForm = array.new_int(2, 0)
+var array<int> qmRTap  = array.new_int(2, 0)
+var array<int> qmRT1   = array.new_int(2, 0)
+var array<int> qmRT2   = array.new_int(2, 0)
+var array<int> qmRFail = array.new_int(2, 0)
+var array<int> qmRWait = array.new_int(2, 0)
+
+// registry: keep only the last N patterns on the chart
+var int qmId = 0
+var array<line>     qmGLn  = array.new<line>()
+var array<int>      qmGLnI = array.new_int()
+var array<label>    qmGLb  = array.new<label>()
+var array<int>      qmGLbI = array.new_int()
+var array<box>      qmGBx  = array.new<box>()
+var array<int>      qmGBxI = array.new_int()
+var array<polyline> qmGPl  = array.new<polyline>()
+var array<int>      qmGPlI = array.new_int()
+
+qmBump(array<int> a, int i, int add) =>
+    array.set(a, i, array.get(a, i) + add)
+    0
+qmRegLn(line o) =>
+    array.push(qmGLn, o)
+    array.push(qmGLnI, qmId)
+    0
+qmRegLb(label o) =>
+    array.push(qmGLb, o)
+    array.push(qmGLbI, qmId)
+    0
+qmRegBx(box o) =>
+    array.push(qmGBx, o)
+    array.push(qmGBxI, qmId)
+    0
+qmRegPl(polyline o) =>
+    array.push(qmGPl, o)
+    array.push(qmGPlI, qmId)
+    0
+qmPrune(int upTo) =>
+    while array.size(qmGLnI) > 0 and array.get(qmGLnI, 0) <= upTo
+        line.delete(array.shift(qmGLn))
+        array.shift(qmGLnI)
+    while array.size(qmGLbI) > 0 and array.get(qmGLbI, 0) <= upTo
+        label.delete(array.shift(qmGLb))
+        array.shift(qmGLbI)
+    while array.size(qmGBxI) > 0 and array.get(qmGBxI, 0) <= upTo
+        box.delete(array.shift(qmGBx))
+        array.shift(qmGBxI)
+    while array.size(qmGPlI) > 0 and array.get(qmGPlI, 0) <= upTo
+        polyline.delete(array.shift(qmGPl))
+        array.shift(qmGPlI)
+    0
+
+qmEvBos  = false
+qmEvTap  = false
+qmEvHit  = 0
+qmEvFrom = 0
+qmEvFail = false
+qmEvEnd  = false
+
+qmCloseOut(string txt, color c, color tc, bool done) =>
+    if done and showMSNRLines and qmShowTgt and not na(qmT2Lb)
+        label.set_text(qmT2Lb, txt + " · T2 " + qmPx(qmT2))
+    else if showMSNRLines and qmShowZone and not na(qmLb)
+        label.set_text(qmLb, txt + " · QML " + qmPx(qmLsP))
+        label.set_color(qmLb, c)
+        label.set_textcolor(qmLb, tc)
+    else
+        qmRegLb(label.new(bar_index, qmDir == -1 ? low : high, txt, style = qmDir == -1 ? label.style_label_up : label.style_label_down,
+             color = c, textcolor = tc, size = size.normal))
+    if not na(qmLn)
+        line.set_x2(qmLn, bar_index)
+    if not na(qmBx)
+        box.set_right(qmBx, bar_index)
+    if not na(qmLb)
+        label.set_x(qmLb, bar_index)
+    qmPrune(qmId - qmKeepN)
+    0
+
+// ---- State machine — closed bars only ----
+if barstate.isconfirmed and not na(atr14) and showMSNRLines and showQML
+    qml = qmLsP
+
+    // 4 · QML tapped: targets or failure beyond the head
+    if qmStage == 4
+        qmEvFrom := qmHitMax
+        failNow = qmDir == -1 ? close > qmHdP : close < qmHdP
+        if failNow
+            qmEvFail := true
+        else
+            for k = 1 to 2
+                tk = k == 1 ? qmT1 : qmT2
+                if qmHitMax == k - 1 and (qmDir == -1 ? low <= tk : high >= tk)
+                    qmHitMax := k
+                    qmEvHit := k
+        expired = bar_index - qmTapB > qmMaxRun
+        if qmEvFail or qmHitMax == 2 or expired
+            d = qmDir == 1 ? 0 : 1
+            qmBump(qmRT1, d, qmHitMax >= 1 ? 1 : 0)
+            qmBump(qmRT2, d, qmHitMax >= 2 ? 1 : 0)
+            qmBump(qmRFail, d, qmEvFail ? 1 : 0)
+            qmEvEnd := true
+            txt = qmHitMax == 2 ? "QM COMPLETE · " + str.tostring(bar_index - qmTapB) + " bars" : qmEvFail ? "✕ HEAD BROKEN" + (qmHitMax == 1 ? " · T1 reached" : "") : "EXPIRED" + (qmHitMax == 1 ? " · T1 reached" : "")
+            qmCloseOut(txt, qmHitMax == 2 ? qmWH : color.new(qmGrey, 0), qmHitMax == 2 ? qmOnWH : color.black, qmHitMax == 2)
+            qmStage := 0
+            qmDir := 0
+
+    // 3 · QM formed: wait for price to come back to the QML
+    if qmStage == 3
+        qmExt := qmDir == -1 ? math.min(qmExt, low) : math.max(qmExt, high)
+        headBroken = qmDir == -1 ? close > qmHdP : close < qmHdP
+        tapped = qmDir == -1 ? high >= qmZFar : low <= qmZFar
+        if tapped and not headBroken
+            qmStage := 4
+            qmEvTap := true
+            qmTapB := bar_index
+            qmHitMax := 0
+            qmBump(qmRTap, qmDir == 1 ? 0 : 1, 1)
+            qmBump(qmRWait, qmDir == 1 ? 0 : 1, bar_index - qmBosB)
+            qmT1 := qmExt
+            qmT2 := qml - (qmHdP - qmExt)
+            mc = qmDir == -1 ? qmDn : qmUp
+            qmRegLb(label.new(bar_index, qmDir == -1 ? high : low, "QML TAP", style = qmDir == -1 ? label.style_label_down : label.style_label_up,
+                 color = mc, textcolor = color.black, size = txtSize))
+            if qmShowTgt
+                qmT1Ln := line.new(bar_index, qmT1, bar_index + 1, qmT1, color = color.new(qmWH, 25), width = 1, style = line.style_dashed)
+                qmT2Ln := line.new(bar_index, qmT2, bar_index + 1, qmT2, color = qmWH, width = 2)
+                qmIvLn := line.new(bar_index, qmHdP, bar_index + 1, qmHdP, color = color.new(mc, 30), width = 1, style = line.style_dotted)
+                qmT1Lb := label.new(bar_index + 1, qmT1, "T1 · BOS EXTREME " + qmPx(qmT1), style = label.style_label_left, color = color.new(qmPanel, 10), textcolor = qmWH, size = size.small)
+                qmT2Lb := label.new(bar_index + 1, qmT2, "T2 · LEG PROJECTION " + qmPx(qmT2), style = label.style_label_left, color = qmWH, textcolor = qmOnWH, size = size.small)
+                if not na(qmLb)
+                    label.set_text(qmLb, (qmDir == -1 ? "▼ QMLSELL " : "▲ QMLBUY ") + qmPx(qml) + " · INVALID " + qmPx(qmHdP))
+                qmRegLn(qmT1Ln)
+                qmRegLn(qmT2Ln)
+                qmRegLn(qmIvLn)
+                qmRegLb(qmT1Lb)
+                qmRegLb(qmT2Lb)
+        else if headBroken or bar_index - qmBosB > qmMaxWait
+            qmEvEnd := true
+            qmCloseOut(headBroken ? "✕ HEAD BROKEN · no QML tap" : "QML MISSED", color.new(qmGrey, 0), color.black, false)
+            qmStage := 0
+            qmDir := 0
+
+    // 0 · searching: shoulder → middle swing → head, then a close through the middle swing
+    if qmStage == 0 and array.size(qmSwT) >= 3
+        n = array.size(qmSwT)
+        qTA = array.get(qmSwT, n - 3)
+        qPA = array.get(qmSwP, n - 3)
+        qBA = array.get(qmSwB, n - 3)
+        qPM = array.get(qmSwP, n - 2)
+        qBM = array.get(qmSwB, n - 2)
+        qPH = array.get(qmSwP, n - 1)
+        qBH = array.get(qmSwB, n - 1)
+        fresh = na(qmUsedHead) or qBH != qmUsedHead
+        bear = qTA == 1 and qPM < qPA and qPH > qPA + qmMinSweep * atr14 and close < qPM
+        bull = qTA == -1 and qPM > qPA and qPH < qPA - qmMinSweep * atr14 and close > qPM
+        if fresh and (bear or bull)
+            qmStage := 3
+            qmDir := bear ? -1 : 1
+            qmEvBos := true
+            qmUsedHead := qBH
+            qmId += 1
+            qmLsP := qPA
+            qmLsB := qBA
+            qmMidP := qPM
+            qmMidB := qBM
+            qmHdP := qPH
+            qmHdB := qBH
+            qmExt := bear ? low : high
+            qmBosB := bar_index
+            qmZFar := bear ? qmLsP - qmZoneAtr * atr14 : qmLsP + qmZoneAtr * atr14
+            qmBump(qmRForm, bear ? 1 : 0, 1)
+            mc = bear ? qmDn : qmUp
+            if qmShowLeg
+                pts = array.from(chart.point.from_index(qmLsB, qmLsP), chart.point.from_index(qmMidB, qmMidP), chart.point.from_index(qmHdB, qmHdP), chart.point.from_index(bar_index, close))
+                qmRegPl(polyline.new(pts, curved = false, xloc = xloc.bar_index, line_color = color.new(qmWH, 15), line_width = 2))
+                qmRegLb(label.new(qmLsB, qmLsP, "LS", style = bear ? label.style_label_down : label.style_label_up, color = color.new(qmPanel, 0), textcolor = qmWH, size = size.small))
+                qmRegLb(label.new(qmHdB, qmHdP, "HEAD · SWEEP", style = bear ? label.style_label_down : label.style_label_up, color = mc, textcolor = color.black, size = size.small))
+                qmRegLn(line.new(qmMidB, qmMidP, bar_index, qmMidP, color = mc, width = 2, style = line.style_dashed))
+                qmRegLb(label.new(bar_index, qmMidP, "BOS", style = label.style_label_left, color = qmNone, textcolor = mc, size = size.small))
+            if qmShowZone
+                qmBx := box.new(qmLsB, math.max(qmLsP, qmZFar), bar_index + 1, math.min(qmLsP, qmZFar), border_color = color.new(mc, 30), border_width = 1,
+                     bgcolor = color.new(mc, 82))
+                qmLn := line.new(qmLsB, qmLsP, bar_index + 1, qmLsP, color = mc, width = 2)
+                qmLb := label.new(bar_index + 1, qmLsP, (bear ? "▼ QMLSELL " : "▲ QMLBUY ") + qmPx(qmLsP), style = label.style_label_left, color = mc, textcolor = color.black, size = txtSize)
+                qmRegBx(qmBx)
+                qmRegLn(qmLn)
+                qmRegLb(qmLb)
+
+// running drawings follow the current bar
+if qmStage >= 3
+    if not na(qmLn)
+        line.set_x2(qmLn, bar_index + 2)
+    if not na(qmBx)
+        box.set_right(qmBx, bar_index + 2)
+    if not na(qmLb)
+        label.set_x(qmLb, bar_index + 2)
+if qmStage == 4 and qmShowTgt and not na(qmT1Ln)
+    line.set_x2(qmT1Ln, bar_index + 2)
+    line.set_x2(qmT2Ln, bar_index + 2)
+    line.set_x2(qmIvLn, bar_index + 2)
+    label.set_x(qmT1Lb, bar_index + 2)
+    label.set_x(qmT2Lb, bar_index + 2)
+if qmEvHit > 0 and qmShowTgt and not na(qmT1Lb)
+    for k = qmEvFrom + 1 to qmEvHit
+        lb = k == 1 ? qmT1Lb : qmT2Lb
+        label.set_text(lb, "✓ " + label.get_text(lb))
+if qmEvEnd and qmShowTgt and not na(qmT1Ln) and qmStage == 0
+    line.set_x2(qmT1Ln, bar_index)
+    line.set_x2(qmT2Ln, bar_index)
+    line.set_x2(qmIvLn, bar_index)
+    label.set_x(qmT1Lb, bar_index + 1)
+    label.set_x(qmT2Lb, bar_index + 1)
+    qmT1Ln := na
+    qmT2Ln := na
+    qmIvLn := na
+    qmT1Lb := na
+    qmT2Lb := na
+
+// ---- QM alerts ----
+if qmAlBos and qmEvBos
+    alert(syminfo.ticker + " " + (qmDir == -1 ? "bearish" : "bullish") + " quasimodo formed · QML " + qmPx(qmLsP) + " · head " + qmPx(qmHdP), alert.freq_once_per_bar_close)
+if qmAlTap and qmEvTap
+    alert(syminfo.ticker + " QML tapped at " + qmPx(qmLsP) + " · T1 " + qmPx(qmT1) + " · T2 " + qmPx(qmT2) + " · invalid beyond " + qmPx(qmHdP), alert.freq_once_per_bar_close)
+if qmAlRes and qmEvHit > 0
+    alert(syminfo.ticker + " quasimodo T" + str.tostring(qmEvHit) + " hit", alert.freq_once_per_bar_close)
+if qmAlRes and qmEvFail
+    alert(syminfo.ticker + " quasimodo failed: close beyond the head", alert.freq_once_per_bar_close)
+
+alertcondition(qmEvBos, "QM formed", "{{ticker}} quasimodo formed (BOS)")
+alertcondition(qmEvTap, "QML tapped", "{{ticker}} QML tapped")
+alertcondition(qmEvHit > 0, "QM target hit", "{{ticker}} quasimodo target hit")
+alertcondition(qmEvFail, "QM failed", "{{ticker}} quasimodo failed")
+
+// ============================================================================
+// 6B. MODULE 3B: MSNR BY TTQ & MILANA — SOURCE & TARGET ENGINE (D, H4, H1, M30, M15)
+//     (Master Guide Module 1-5: Pure Body-Only Close-to-Open Interface + OCL Lookback)
+// ============================================================================
+ttqLblSz    = f_getFontSize(ttqLabelSizeIn)
+ttqOclStyle = oclLineStyleIn == "Dotted" ? line.style_dotted : (oclLineStyleIn == "Dashed" ? line.style_dashed : line.style_solid)
+
+f_getTTQSourceCol(string tfTag, string kind) =>
+    color c = #e53935
+    if tfTag == "D"
+        c := #e53935
+    else if tfTag == "H4"
+        c := kind == "A" ? #fb8c00 : #1e88e5
+    else if tfTag == "H1"
+        c := kind == "A" ? #fb8c00 : #1e88e5
+    else if tfTag == "M30"
+        c := kind == "A" ? #ec407a : #00acc1
+    else if tfTag == "M15"
+        c := kind == "A" ? #ab47bc : #26a69a
+    c
+
+// Module 1 Body-Only Integrity Law:
+// - A-Peak (Bearish Resistance Source): Bullish close [2] (c2 > o2) followed by Bearish close [1] (c1 < o1). Anchor = c2.
+// - V-Trough (Bullish Support Source): Bearish close [2] (c2 < o2) followed by Bullish close [1] (c1 > o1). Anchor = c2.
+f_htfTTQPack() =>
+    c1 = close[1], o1 = open[1], t1 = time[1]
+    c2 = close[2], o2 = open[2]
+    isAPeak   = (c2 > o2) and (c1 < o1)
+    isVTrough = (c2 < o2) and (c1 > o1)
+    aPrice    = isAPeak ? c2 : na
+    vPrice    = isVTrough ? c2 : na
+    storyBull = close >= open
+    [t1, isAPeak, aPrice, isVTrough, vPrice, storyBull,
+     open[1], close[1], time[1],
+     open[2], close[2], time[2],
+     open[3], close[3], time[3],
+     open[4], close[4], time[4],
+     open[5], close[5], time[5]]
+
+[w_t1, w_isA, w_aP, w_isV, w_vP, w_bull, w_o1, w_c1, w_ot1, w_o2, w_c2, w_ot2, w_o3, w_c3, w_ot3, w_o4, w_c4, w_ot4, w_o5, w_c5, w_ot5] = request.security(syminfo.tickerid, "W", f_htfTTQPack(), lookahead=barmerge.lookahead_off)
+[d_t1, d_isA, d_aP, d_isV, d_vP, d_bull, d_o1, d_c1, d_ot1, d_o2, d_c2, d_ot2, d_o3, d_c3, d_ot3, d_o4, d_c4, d_ot4, d_o5, d_c5, d_ot5] = request.security(syminfo.tickerid, "D", f_htfTTQPack(), lookahead=barmerge.lookahead_off)
+[h4_t1, h4_isA, h4_aP, h4_isV, h4_vP, h4_bull, h4_o1, h4_c1, h4_ot1, h4_o2, h4_c2, h4_ot2, h4_o3, h4_c3, h4_ot3, h4_o4, h4_c4, h4_ot4, h4_o5, h4_c5, h4_ot5] = request.security(syminfo.tickerid, "240", f_htfTTQPack(), lookahead=barmerge.lookahead_off)
+[h1_t1, h1_isA, h1_aP, h1_isV, h1_vP, h1_bull, h1_o1, h1_c1, h1_ot1, h1_o2, h1_c2, h1_ot2, h1_o3, h1_c3, h1_ot3, h1_o4, h1_c4, h1_ot4, h1_o5, h1_c5, h1_ot5] = request.security(syminfo.tickerid, "60", f_htfTTQPack(), lookahead=barmerge.lookahead_off)
+[m30_t1, m30_isA, m30_aP, m30_isV, m30_vP, m30_bull, m30_o1, m30_c1, m30_ot1, m30_o2, m30_c2, m30_ot2, m30_o3, m30_c3, m30_ot3, m30_o4, m30_c4, m30_ot4, m30_o5, m30_c5, m30_ot5] = request.security(syminfo.tickerid, "30", f_htfTTQPack(), lookahead=barmerge.lookahead_off)
+[m15_t1, m15_isA, m15_aP, m15_isV, m15_vP, m15_bull, m15_o1, m15_c1, m15_ot1, m15_o2, m15_c2, m15_ot2, m15_o3, m15_c3, m15_ot3, m15_o4, m15_c4, m15_ot4, m15_o5, m15_c5, m15_ot5] = request.security(syminfo.tickerid, "15", f_htfTTQPack(), lookahead=barmerge.lookahead_off)
+
+// Higher Timeframe closes (kept: the dashboard MTF bias reads these)
+[htf1_C, htf1_H, htf1_L, htf1_O, htf1_T] = request.security(syminfo.tickerid, tf_H1, [close[1], high[1], low[1], open[1], time[1]], lookahead=barmerge.lookahead_off)
+[htf2_C, htf2_H, htf2_L, htf2_O, htf2_T] = request.security(syminfo.tickerid, tf_H2, [close[1], high[1], low[1], open[1], time[1]], lookahead=barmerge.lookahead_off)
+
+f_addTTQSource(string tfTag, string kind, float px, int sTime, int maxCap) =>
+    if not na(px) and not na(sTime)
+        bool dup = false
+        for it in msnrSources
+            if it.tfTag == tfTag and it.kind == kind and (it.startTime == sTime or math.abs(it.levelPrice - px) <= syminfo.mintick * 2)
+                dup := true
+                break
+        if not dup
+            col = f_getTTQSourceCol(tfTag, kind)
+            array.push(msnrSources, TTQMSNRLevel.new(tfTag=tfTag, kind=kind, levelPrice=px, startTime=sTime, isFresh=true, isOCL=false, isFlipped=false, baseCol=col))
+            int cnt = 0
+            int oldIdx = -1
+            for [idx, item] in msnrSources
+                if item.tfTag == tfTag and item.kind == kind
+                    cnt += 1
+                    if oldIdx == -1
+                        oldIdx := idx
+            if cnt > maxCap and oldIdx != -1
+                deadOld = array.remove(msnrSources, oldIdx)
+                deadOld.deleteTTQ()
+    int(na)
+
+if showD_Lvl and not na(d_t1) and (na(d_t1[1]) or d_t1 != d_t1[1])
+    if d_isA
+        f_addTTQSource("D", "A", d_aP, d_t1, maxSourcesPerTF)
+    if d_isV
+        f_addTTQSource("D", "V", d_vP, d_t1, maxSourcesPerTF)
+
+if showH4_Lvl and not na(h4_t1) and (na(h4_t1[1]) or h4_t1 != h4_t1[1])
+    if h4_isA
+        f_addTTQSource("H4", "A", h4_aP, h4_t1, maxSourcesPerTF)
+    if h4_isV
+        f_addTTQSource("H4", "V", h4_vP, h4_t1, maxSourcesPerTF)
+
+if showH1_Lvl and not na(h1_t1) and (na(h1_t1[1]) or h1_t1 != h1_t1[1])
+    if h1_isA
+        f_addTTQSource("H1", "A", h1_aP, h1_t1, maxSourcesPerTF)
+    if h1_isV
+        f_addTTQSource("H1", "V", h1_vP, h1_t1, maxSourcesPerTF)
+
+if showM30_Lvl and not na(m30_t1) and (na(m30_t1[1]) or m30_t1 != m30_t1[1])
+    if m30_isA
+        f_addTTQSource("M30", "A", m30_aP, m30_t1, maxSourcesPerTF)
+    if m30_isV
+        f_addTTQSource("M30", "V", m30_vP, m30_t1, maxSourcesPerTF)
+
+if showM15_Lvl and not na(m15_t1) and (na(m15_t1[1]) or m15_t1 != m15_t1[1])
+    if m15_isA
+        f_addTTQSource("M15", "A", m15_aP, m15_t1, maxSourcesPerTF)
+    if m15_isV
+        f_addTTQSource("M15", "V", m15_vP, m15_t1, maxSourcesPerTF)
+
+// Module 2 (Fresh vs Unfresh Friction) & Module 5 (Invalidation Strike & SBR/RBS Flip)
+var array<int> msnrDeadIdxs = array.new<int>()
+array.clear(msnrDeadIdxs)
+
+for [idx, item] in msnrSources
+    if time > item.startTime
+        bool isRes = item.kind == "A" or item.kind == "SBR"
+        bool isSup = item.kind == "V" or item.kind == "RBS"
+        bool bodyBreak = (isRes and close > item.levelPrice) or (isSup and close < item.levelPrice)
+        bool wickTouch = not bodyBreak and (high >= item.levelPrice and low <= item.levelPrice)
+        if bodyBreak
+            if flipBrokenToSBR and not item.isFlipped
+                item.kind := isRes ? "RBS" : "SBR"
+                item.isFlipped := true
+                item.isFresh   := true
+            else
+                array.push(msnrDeadIdxs, idx)
+        else if wickTouch and item.isFresh
+            item.isFresh := false
+
+if array.size(msnrDeadIdxs) > 0
+    for i = array.size(msnrDeadIdxs) - 1 to 0
+        dIdx = array.get(msnrDeadIdxs, i)
+        deadS = array.remove(msnrSources, dIdx)
+        deadS.deleteTTQ()
+
+f_pushTTQ_OCL(string tfTag, int lbk, float o1, float c1, int t1, float o2, float c2, int t2, float o3, float c3, int t3, float o4, float c4, int t4, float o5, float c5, int t5, color oCol, color cCol) =>
+    if lbk >= 1 and not na(o1)
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-O", levelPrice=o1, startTime=t1, isFresh=true, isOCL=true, baseCol=oCol))
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-C", levelPrice=c1, startTime=t1, isFresh=true, isOCL=true, baseCol=cCol))
+    if lbk >= 2 and not na(o2)
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-O", levelPrice=o2, startTime=t2, isFresh=true, isOCL=true, baseCol=oCol))
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-C", levelPrice=c2, startTime=t2, isFresh=true, isOCL=true, baseCol=cCol))
+    if lbk >= 3 and not na(o3)
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-O", levelPrice=o3, startTime=t3, isFresh=true, isOCL=true, baseCol=oCol))
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-C", levelPrice=c3, startTime=t3, isFresh=true, isOCL=true, baseCol=cCol))
+    if lbk >= 4 and not na(o4)
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-O", levelPrice=o4, startTime=t4, isFresh=true, isOCL=true, baseCol=oCol))
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-C", levelPrice=c4, startTime=t4, isFresh=true, isOCL=true, baseCol=cCol))
+    if lbk >= 5 and not na(o5)
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-O", levelPrice=o5, startTime=t5, isFresh=true, isOCL=true, baseCol=oCol))
+        array.push(msnrOCLs, TTQMSNRLevel.new(tfTag=tfTag, kind="OCL-C", levelPrice=c5, startTime=t5, isFresh=true, isOCL=true, baseCol=cCol))
+    int(na)
+
+f_formatTTQToken(TTQMSNRLevel it) =>
+    string tfP = showTTQTF ? (it.tfTag + " ") : ""
+    string tyP = showTTQType ? it.kind : ""
+    string stP = (showTTQStatus and not it.isOCL) ? (it.isFresh ? " •" : " ◦") : ""
+    tfP + tyP + stP
+
+// Render all active MSNR A/V Sources & OCLs on last bar with coalesced labels (e.g. "D A, OCL-O, OCL-C")
+if barstate.islast
+    for o in msnrOCLs
+        o.deleteTTQ()
+    array.clear(msnrOCLs)
+
+    if showD_OCL
+        f_pushTTQ_OCL("D", dOCL_Lookback, d_o1, d_c1, d_ot1, d_o2, d_c2, d_ot2, d_o3, d_c3, d_ot3, d_o4, d_c4, d_ot4, d_o5, d_c5, d_ot5, dOpenCol, dCloseCol)
+    if showH4_OCL
+        f_pushTTQ_OCL("H4", h4OCL_Lookback, h4_o1, h4_c1, h4_ot1, h4_o2, h4_c2, h4_ot2, h4_o3, h4_c3, h4_ot3, h4_o4, h4_c4, h4_ot4, h4_o5, h4_c5, h4_ot5, h4OpenCol, h4CloseCol)
+    if showH1_OCL
+        f_pushTTQ_OCL("H1", h1OCL_Lookback, h1_o1, h1_c1, h1_ot1, h1_o2, h1_c2, h1_ot2, h1_o3, h1_c3, h1_ot3, h1_o4, h1_c4, h1_ot4, h1_o5, h1_c5, h1_ot5, h1OpenCol, h1CloseCol)
+    if showM30_OCL
+        f_pushTTQ_OCL("M30", m30OCL_Lookback, m30_o1, m30_c1, m30_ot1, m30_o2, m30_c2, m30_ot2, m30_o3, m30_c3, m30_ot3, m30_o4, m30_c4, m30_ot4, m30_o5, m30_c5, m30_ot5, m30OpenCol, m30CloseCol)
+    if showM15_OCL
+        f_pushTTQ_OCL("M15", m15OCL_Lookback, m15_o1, m15_c1, m15_ot1, m15_o2, m15_c2, m15_ot2, m15_o3, m15_c3, m15_ot3, m15_o4, m15_c4, m15_ot4, m15_o5, m15_c5, m15_ot5, m15OpenCol, m15CloseCol)
+
+    array<TTQMSNRLevel> renderList = array.new<TTQMSNRLevel>()
+    for s in msnrSources
+        s.deleteTTQ()
+        bool tfOn = (s.tfTag == "D" and showD_Lvl) or (s.tfTag == "H4" and showH4_Lvl) or (s.tfTag == "H1" and showH1_Lvl) or (s.tfTag == "M30" and showM30_Lvl) or (s.tfTag == "M15" and showM15_Lvl)
+        bool passFresh = not hideUnfreshLvls or s.isFresh
+        if tfOn and passFresh
+            array.push(renderList, s)
+    for o in msnrOCLs
+        array.push(renderList, o)
+
+    int barSpanMs = math.max(1, time - nz(time[1], time - 60000))
+    int rightTime = time + msnrRightOffset * barSpanMs
+    float mergeTol = math.max(syminfo.mintick * 2.0, safeAtr * 0.03)
+    color lblTxtCol = msnrTheme == "Light" ? #37474f : #e0e0e0
+
+    array<bool> mergedFlags = array.new_bool(array.size(renderList), false)
+
+    for [i, item] in renderList
+        color drawCol = item.isFresh ? item.baseCol : color.new(item.baseCol, unfreshTransp)
+        int drawW     = item.isOCL ? 1 : (item.isFresh ? freshLineWidth : unfreshLineWidth)
+        st            = item.isOCL ? ttqOclStyle : line.style_solid
+
+        item.ln := line.new(item.startTime, item.levelPrice, rightTime, item.levelPrice, xloc=xloc.bar_time, color=drawCol, style=st, width=drawW)
+
+        if showTTQLabels and not array.get(mergedFlags, i)
+            string combinedTag = f_formatTTQToken(item)
+            array.set(mergedFlags, i, true)
+            for [j, other] in renderList
+                if j > i and not array.get(mergedFlags, j) and math.abs(other.levelPrice - item.levelPrice) <= mergeTol
+                    string otherTok = (other.tfTag == item.tfTag and showTTQTF) ? (showTTQType ? other.kind : other.tfTag) : f_formatTTQToken(other)
+                    if not str.contains(combinedTag, otherTok)
+                        combinedTag += ", " + otherTok
+                    array.set(mergedFlags, j, true)
+            if showTTQPrice
+                combinedTag += " (" + str.tostring(item.levelPrice, format.mintick) + ")"
+
+            item.lb := label.new(rightTime, item.levelPrice, "  " + combinedTag, xloc=xloc.bar_time, style=label.style_label_left, color=color.new(color.black, 100), textcolor=lblTxtCol, size=ttqLblSz)
+
+// TTQ & Milana Top-Right Storyline HUD Table (Weekly, Daily, H4, H1, M30, M15)
+ttqSessStr = (nyH >= 19 or nyH < 2) ? "Asian" : ((nyH >= 2 and nyH < 8) ? "London" : ((nyH >= 8 and nyH < 17) ? "New York" : "Off-Market"))
+var table ttqHud = table.new(position.top_right, 2, 9, bgcolor=color.new(#263238, 5), border_color=color.new(#455a64, 40), border_width=1)
+
+f_ttqHudRow(int r, string tfTitle, bool bullBias) =>
+    table.cell(ttqHud, 0, r, tfTitle, bgcolor=color.new(#37474f, 10), text_color=color.black, text_halign=text.align_left, text_size=size.tiny)
+    table.cell(ttqHud, 1, r, bullBias ? "BULLISH" : "BEARISH", bgcolor=color.new(#37474f, 10), text_color=bullBias ? #00e676 : #ff5252, text_halign=text.align_right, text_size=size.tiny)
+
+if showTTQ_HUD and barstate.islast
+    table.cell(ttqHud, 0, 0, "MSNR by TTQxMilana", bgcolor=#1565c0, text_color=color.black, text_size=size.small)
+    table.cell(ttqHud, 1, 0, chartClean, bgcolor=#1565c0, text_color=color.black, text_size=size.tiny)
+    table.cell(ttqHud, 0, 1, "Session", bgcolor=color.new(#263238, 10), text_color=color.silver, text_halign=text.align_left, text_size=size.tiny)
+    sCol = ttqSessStr == "New York" ? #ffb300 : (ttqSessStr == "London" ? #29b6f6 : #4fc3f7)
+    table.cell(ttqHud, 1, 1, ttqSessStr, bgcolor=color.new(#263238, 10), text_color=sCol, text_halign=text.align_right, text_size=size.tiny)
+    table.cell(ttqHud, 0, 2, "─── Storyline", bgcolor=color.new(#263238, 0), text_color=#ffd54f, text_halign=text.align_right, text_size=size.tiny)
+    table.cell(ttqHud, 1, 2, "───", bgcolor=color.new(#263238, 0), text_color=#ffd54f, text_halign=text.align_left, text_size=size.tiny)
+    f_ttqHudRow(3, "Weekly", w_bull)
+    f_ttqHudRow(4, "Daily",  d_bull)
+    f_ttqHudRow(5, "H4",     h4_bull)
+    f_ttqHudRow(6, "H1",     h1_bull)
+    f_ttqHudRow(7, "M30",    m30_bull)
+    f_ttqHudRow(8, "M15",    m15_bull)
+
+// ============================================================================
+// 7. MODULE 4: GRADED SEQUENTIAL SMT (SSMT) & tCISD / QCISD CONFIRMATION
+// ============================================================================
+var float qCurHi = na, var int qCurHiBar = na
+var float qCurLo = na, var int qCurLoBar = na
+var float qPrevHi = na, var int qPrevHiBar = na
+var float qPrevLo = na, var int qPrevLoBar = na
+
+var float p1CurHi = na, var float p1CurLo = na, var float p1PrevHi = na, var float p1PrevLo = na
+var float p2CurHi = na, var float p2CurLo = na, var float p2PrevHi = na, var float p2PrevLo = na
+var bool  bullSSMTFired = false
+var bool  bearSSMTFired = false
+
+if isNew90m
+    qPrevHi := qCurHi, qPrevHiBar := qCurHiBar
+    qPrevLo := qCurLo, qPrevLoBar := qCurLoBar
+    p1PrevHi := p1CurHi, p1PrevLo := p1CurLo
+    p2PrevHi := p2CurHi, p2PrevLo := p2CurLo
+    qCurHi := high, qCurHiBar := bar_index
+    qCurLo := low,  qCurLoBar := bar_index
+    p1CurHi := p1H, p1CurLo := p1L
+    p2CurHi := p2H, p2CurLo := p2L
+    bullSSMTFired := false
+    bearSSMTFired := false
+if not isNew90m
+    if na(qCurHi) or high >= qCurHi
+        qCurHi := high
+        qCurHiBar := bar_index
+    if na(qCurLo) or low <= qCurLo
+        qCurLo := low
+        qCurLoBar := bar_index
+    p1CurHi := na(p1CurHi) ? p1H : math.max(p1CurHi, p1H)
+    p1CurLo := na(p1CurLo) ? p1L : math.min(p1CurLo, p1L)
+    p2CurHi := na(p2CurHi) ? p2H : math.max(p2CurHi, p2H)
+    p2CurLo := na(p2CurLo) ? p2L : math.min(p2CurLo, p2L)
+
+bullDiv1 = hasP1 and not na(qPrevLo) and ((qCurLo < qPrevLo) != (p1CurLo < p1PrevLo))
+bullDiv2 = hasP2 and not na(qPrevLo) and ((qCurLo < qPrevLo) != (p2CurLo < p2PrevLo))
+bearDiv1 = hasP1 and not na(qPrevHi) and ((qCurHi > qPrevHi) != (p1CurHi > p1PrevHi))
+bearDiv2 = hasP2 and not na(qPrevHi) and ((qCurHi > qPrevHi) != (p2CurHi > p2PrevHi))
+
+if showSSMT and not bullSSMTFired and (bullDiv1 or bullDiv2) and not na(qPrevLoBar) and (bar_index - qPrevLoBar) < 350
+    bullSSMTFired := true
+    gradeStr = (bullDiv1 and bullDiv2) ? "A+++" : (q90 == 2 or q90 == 3 ? "A++" : "A+")
+    peerTag  = bullDiv1 ? f_cleanTicker(peerSym1) : f_cleanTicker(peerSym2)
+    pairTxt  = chartClean + " vs " + peerTag
+    cLvl     = isBear ? open : (isBear[1] ? open[1] : high)
+    initTxt  = gradeStr + " 90m SSMT 🟢 • " + pairTxt + (showPendingSSMT ? " •PENDING" : "")
+    ln = line.new(qPrevLoBar, qPrevLo, qCurLoBar, qCurLo, xloc=xloc.bar_index, color=colBullSSMT, style=line.style_solid, width=1)
+    lb = label.new(int(math.avg(qPrevLoBar, qCurLoBar)), math.min(qPrevLo, qCurLo) - safeAtr * 0.15, initTxt, xloc=xloc.bar_index, style=label.style_none, textcolor=colBullSSMT, size=txtSize)
+    sObj = SSMTObj.new(qPrevLoBar, qPrevLo, qCurLoBar, qCurLo, true, false, gradeStr, "90m", pairTxt, cLvl, ln, lb, na, na)
+    array.push(ssmtList, sObj)
+    if array.size(ssmtList) > ssmtHistoryLimit
+        oldS = array.shift(ssmtList)
+        oldS.deleteSSMT()
+
+if showSSMT and not bearSSMTFired and (bearDiv1 or bearDiv2) and not na(qPrevHiBar) and (bar_index - qPrevHiBar) < 350
+    bearSSMTFired := true
+    gradeStr = (bearDiv1 and bearDiv2) ? "A+++" : (q90 == 2 or q90 == 3 ? "A++" : "A+")
+    peerTag  = bearDiv1 ? f_cleanTicker(peerSym1) : f_cleanTicker(peerSym2)
+    pairTxt  = chartClean + " vs " + peerTag
+    cLvl     = isBull ? open : (isBull[1] ? open[1] : low)
+    initTxt  = gradeStr + " 90m SSMT 🔴 • " + pairTxt + (showPendingSSMT ? " •PENDING" : "")
+    ln = line.new(qPrevHiBar, qPrevHi, qCurHiBar, qCurHi, xloc=xloc.bar_index, color=colBearSSMT, style=line.style_solid, width=1)
+    lb = label.new(int(math.avg(qPrevHiBar, qCurHiBar)), math.max(qPrevHi, qCurHi) + safeAtr * 0.25, initTxt, xloc=xloc.bar_index, style=label.style_none, textcolor=colBearSSMT, size=txtSize)
+    sObj = SSMTObj.new(qPrevHiBar, qPrevHi, qCurHiBar, qCurHi, false, false, gradeStr, "90m", pairTxt, cLvl, ln, lb, na, na)
+    array.push(ssmtList, sObj)
+    if array.size(ssmtList) > ssmtHistoryLimit
+        oldS = array.shift(ssmtList)
+        oldS.deleteSSMT()
+
+for s in ssmtList
+    if not na(s.sLbl)
+        label.set_size(s.sLbl, txtSize)
+    if not na(s.cLbl)
+        label.set_size(s.cLbl, txtSize)
+    if not s.isConfirmed and bar_index > s.x2
+        confirmedNow = ssmtConfirmMode == "Quarter Close" ? isNew90m : (s.isBull ? close > s.confirmLevel : close < s.confirmLevel)
+        if confirmedNow
+            s.isConfirmed := true
+            cleanTxt = s.grade + " " + s.cycleTag + " SSMT " + (s.isBull ? "🟢 • " : "🔴 • ") + s.pairText
+            label.set_text(s.sLbl, cleanTxt)
+            cisdTag = ssmtConfirmMode == "QCISD" ? (s.isBull ? "+QCISD" : "-QCISD") : (s.isBull ? "+tCISD" : "-tCISD")
+            cisdCol = s.isBull ? #1b8a5a : #e53935
+            s.cLine := line.new(s.x2, s.confirmLevel, bar_index, s.confirmLevel, xloc=xloc.bar_index, color=cisdCol, style=line.style_solid, width=1)
+            s.cLbl  := label.new(int(math.avg(s.x2, bar_index)), s.confirmLevel, cisdTag, xloc=xloc.bar_index, style=label.style_none, textcolor=cisdCol, size=txtSize)
+
+// ============================================================================
+// 7B. MODULE 4B: SMT-FILL [ORACLE] FVG ENGINE (FROM NOTEBOOK SOURCES 10 & 12)
+// ============================================================================
+// Bullish SMTF FVG Detection (low[1] > high[3])
+if enable_smt_fill and show_bullish_gaps and low[1] > high[3]
+    fvg_bull_1 = not na(p1L[1]) and p1L[1] > p1H[3]
+    fvg_bull_2 = not na(p2L[1]) and p2L[1] > p2H[3]
+    fvg_bull_3 = not na(p3L[1]) and p3L[1] > p3H[3]
+
+    if fvg_bull_1 or fvg_bull_2 or fvg_bull_3
+        h0 = low[1]
+        l0 = high[3]
+        fh1 = fvg_bull_1 ? p1L[1] : na
+        fl1 = fvg_bull_1 ? p1H[3] : na
+        fh2 = fvg_bull_2 ? p2L[1] : na
+        fl2 = fvg_bull_2 ? p2H[3] : na
+        fh3 = fvg_bull_3 ? p3L[1] : na
+        fl3 = fvg_bull_3 ? p3H[3] : na
+
+        mid0 = l0 + (h0 - l0) * 0.5
+        mid1 = fvg_bull_1 ? fl1 + (fh1 - fl1) * 0.5 : na
+        mid2 = fvg_bull_2 ? fl2 + (fh2 - fl2) * 0.5 : na
+        mid3 = fvg_bull_3 ? fl3 + (fh3 - fl3) * 0.5 : na
+
+        new_gap = Gap.new(bar_index - 2, "bull", l0, fl1, fl2, fl3, h0, fh1, fh2, fh3, mid0, mid1, mid2, mid3, false, false, false, false, false, false, false, false, false, false, false, false, na, na, na, na, bar_index)
+        array.push(gaps, new_gap)
+
+// Bearish SMTF FVG Detection (high[1] < low[3])
+if enable_smt_fill and show_bearish_gaps and high[1] < low[3]
+    fvg_bear_1 = not na(p1H[1]) and p1H[1] < p1L[3]
+    fvg_bear_2 = not na(p2H[1]) and p2H[1] < p2L[3]
+    fvg_bear_3 = not na(p3H[1]) and p3H[1] < p3L[3]
+
+    if fvg_bear_1 or fvg_bear_2 or fvg_bear_3
+        h0 = low[3]
+        l0 = high[1]
+        fh1 = fvg_bear_1 ? p1L[3] : na
+        fl1 = fvg_bear_1 ? p1H[1] : na
+        fh2 = fvg_bear_2 ? p2L[3] : na
+        fl2 = fvg_bear_2 ? p2H[1] : na
+        fh3 = fvg_bear_3 ? p3L[3] : na
+        fl3 = fvg_bear_3 ? p3H[1] : na
+
+        mid0 = l0 + (h0 - l0) * 0.5
+        mid1 = fvg_bear_1 ? fl1 + (fh1 - fl1) * 0.5 : na
+        mid2 = fvg_bear_2 ? fl2 + (fh2 - fl2) * 0.5 : na
+        mid3 = fvg_bear_3 ? fl3 + (fh3 - fl3) * 0.5 : na
+
+        new_gap = Gap.new(bar_index - 2, "bear", l0, fl1, fl2, fl3, h0, fh1, fh2, fh3, mid0, mid1, mid2, mid3, false, false, false, false, false, false, false, false, false, false, false, false, na, na, na, na, bar_index)
+        array.push(gaps, new_gap)
+
+while array.size(gaps) > max_gaps
+    oldGap = array.shift(gaps)
+    oldGap.deleteGap()
+
+// Evaluate SMT-Fill Traded Flags, CIC Divergence Lines & FVG Box Rendering
+if enable_smt_fill and array.size(gaps) > 0
+    int i = 0
+    int gap_count = array.size(gaps)
+    while i < gap_count
+        temp = array.get(gaps, i)
+        if temp.side == "bull"
+            temp.h_traded    := temp.h_traded    or low < temp.h
+            temp.h1_traded   := temp.h1_traded   or (not na(temp.h1) and p1L < temp.h1)
+            temp.h2_traded   := temp.h2_traded   or (not na(temp.h2) and p2L < temp.h2)
+            temp.h3_traded   := temp.h3_traded   or (not na(temp.h3) and p3L < temp.h3)
+            temp.l_traded    := temp.l_traded    or low < temp.l
+            temp.l1_traded   := temp.l1_traded   or (not na(temp.l1) and p1L < temp.l1)
+            temp.l2_traded   := temp.l2_traded   or (not na(temp.l2) and p2L < temp.l2)
+            temp.l3_traded   := temp.l3_traded   or (not na(temp.l3) and p3L < temp.l3)
+            temp.mid_traded  := temp.mid_traded  or low < temp.mid
+            temp.mid1_traded := temp.mid1_traded or (not na(temp.mid1) and p1L < temp.mid1)
+            temp.mid2_traded := temp.mid2_traded or (not na(temp.mid2) and p2L < temp.mid2)
+            temp.mid3_traded := temp.mid3_traded or (not na(temp.mid3) and p3L < temp.mid3)
+
+        if temp.side == "bear"
+            temp.h_traded    := temp.h_traded    or high > temp.h
+            temp.h1_traded   := temp.h1_traded   or (not na(temp.h1) and p1H > temp.h1)
+            temp.h2_traded   := temp.h2_traded   or (not na(temp.h2) and p2H > temp.h2)
+            temp.h3_traded   := temp.h3_traded   or (not na(temp.h3) and p3H > temp.h3)
+            temp.l_traded    := temp.l_traded    or high > temp.l
+            temp.l1_traded   := temp.l1_traded   or (not na(temp.l1) and p1H > temp.l1)
+            temp.l2_traded   := temp.l2_traded   or (not na(temp.l2) and p2H > temp.l2)
+            temp.l3_traded   := temp.l3_traded   or (not na(temp.l3) and p3H > temp.l3)
+            temp.mid_traded  := temp.mid_traded  or high > temp.mid
+            temp.mid1_traded := temp.mid1_traded or (not na(temp.mid1) and p1H > temp.mid1)
+            temp.mid2_traded := temp.mid2_traded or (not na(temp.mid2) and p2H > temp.mid2)
+            temp.mid3_traded := temp.mid3_traded or (not na(temp.mid3) and p3H > temp.mid3)
+
+        bool gap_closed = (temp.side == "bull" and close < temp.l) or (temp.side == "bear" and close > temp.h)
+        if gap_closed
+            temp.deleteGap()
+            array.remove(gaps, i)
+            gap_count -= 1
+            continue
+
+        // SMT-Fill Divergence Detection across High, Mid, Low
+        divergence_high       = ((temp.h_traded != temp.h1_traded and not na(temp.h1)) or (temp.h_traded != temp.h2_traded and not na(temp.h2)) or (temp.h_traded != temp.h3_traded and not na(temp.h3)))
+        divergence_high_asset = (temp.h_traded != temp.h1_traded and not na(temp.h1)) ? peerSym1 : ((temp.h_traded != temp.h2_traded and not na(temp.h2)) ? peerSym2 : ((temp.h_traded != temp.h3_traded and not na(temp.h3)) ? peerSym3 : ""))
+
+        divergence_mid        = ((temp.mid_traded != temp.mid1_traded and not na(temp.mid1)) or (temp.mid_traded != temp.mid2_traded and not na(temp.mid2)) or (temp.mid_traded != temp.mid3_traded and not na(temp.mid3)))
+        divergence_mid_asset  = (temp.mid_traded != temp.mid1_traded and not na(temp.mid1)) ? peerSym1 : ((temp.mid_traded != temp.mid2_traded and not na(temp.mid2)) ? peerSym2 : ((temp.mid_traded != temp.mid3_traded and not na(temp.mid3)) ? peerSym3 : ""))
+
+        divergence_low        = ((temp.l_traded != temp.l1_traded and not na(temp.l1)) or (temp.l_traded != temp.l2_traded and not na(temp.l2)) or (temp.l_traded != temp.l3_traded and not na(temp.l3)))
+        divergence_low_asset  = (temp.l_traded != temp.l1_traded and not na(temp.l1)) ? peerSym1 : ((temp.l_traded != temp.l2_traded and not na(temp.l2)) ? peerSym2 : ((temp.l_traded != temp.l3_traded and not na(temp.l3)) ? peerSym3 : ""))
+
+        bool any_divergence = divergence_high or divergence_mid or divergence_low
+        string primary_divergence = "none"
+        string primary_asset      = ""
+
+        if temp.side == "bull"
+            primary_divergence := divergence_high ? "high" : (divergence_mid ? "mid" : (divergence_low ? "low" : "none"))
+            primary_asset      := divergence_high ? divergence_high_asset : (divergence_mid ? divergence_mid_asset : (divergence_low ? divergence_low_asset : ""))
+        else
+            primary_divergence := divergence_low ? "low" : (divergence_mid ? "mid" : (divergence_high ? "high" : "none"))
+            primary_asset      := divergence_low ? divergence_low_asset : (divergence_mid ? divergence_mid_asset : (divergence_high ? divergence_high_asset : ""))
+
+        price_in_gap  = (low <= temp.h and high >= temp.l)
+        asset1_in_gap = not na(temp.h1) and not na(temp.l1) and (p1L <= temp.h1 and p1H >= temp.l1)
+        asset2_in_gap = not na(temp.h2) and not na(temp.l2) and (p2L <= temp.h2 and p2H >= temp.l2)
+        asset3_in_gap = not na(temp.h3) and not na(temp.l3) and (p3L <= temp.h3 and p3H >= temp.l3)
+
+        any_asset_touching = price_in_gap or asset1_in_gap or asset2_in_gap or asset3_in_gap
+        if any_asset_touching
+            temp.last_touching_bar := bar_index
+
+        should_show = true
+        if only_show_active and not any_asset_touching
+            should_show := false
+        if not any_divergence
+            should_show := false
+
+        right_edge = temp.last_touching_bar + box_extension
+
+        if any_divergence and should_show
+            gap_col    = temp.side == "bull" ? bull_gap_color : bear_gap_color
+            border_col = show_gap_border ? (temp.side == "bull" ? color.new(bull_gap_color, 0) : color.new(bear_gap_color, 0)) : gap_col
+            label_text = show_asset_label ? getSymbolOnly(primary_asset) : ""
+
+            if not na(temp.fvg)
+                box.set_right(temp.fvg, right_edge)
+                box.set_text(temp.fvg, label_text)
+                box.set_text_size(temp.fvg, txtSize)
+            else
+                temp.fvg := box.new(
+                     temp.idx - 1, temp.h, right_edge, temp.l,
+                     xloc         = xloc.bar_index,
+                     border_color = border_col,
+                     bgcolor      = gap_col,
+                     text         = label_text,
+                     text_color   = label_text_color,
+                     text_size    = txtSize,
+                     text_halign  = f_getTextAlign(label_position),
+                     border_width = gap_border_width)
+
+            if show_smt_line
+                if primary_divergence != "none"
+                    float level   = primary_divergence == "high" ? temp.h : (primary_divergence == "mid" ? temp.mid : temp.l)
+                    line cic_line = primary_divergence == "high" ? temp.cic_line_high : (primary_divergence == "mid" ? temp.cic_line_mid : temp.cic_line_low)
+                    if not na(cic_line)
+                        line.set_x2(cic_line, right_edge)
+                    else
+                        new_line = line.new(
+                             temp.idx - 1, level, right_edge, level,
+                             xloc  = xloc.bar_index,
+                             color = smt_line_color,
+                             style = f_getLineStyle(smt_line_style),
+                             width = smt_line_width)
+                        if primary_divergence == "high"
+                            temp.cic_line_high := new_line
+                        else if primary_divergence == "mid"
+                            temp.cic_line_mid := new_line
+                        else
+                            temp.cic_line_low := new_line
+                if primary_divergence != "high" and not na(temp.cic_line_high)
+                    line.delete(temp.cic_line_high)
+                    temp.cic_line_high := na
+                if primary_divergence != "mid" and not na(temp.cic_line_mid)
+                    line.delete(temp.cic_line_mid)
+                    temp.cic_line_mid := na
+                if primary_divergence != "low" and not na(temp.cic_line_low)
+                    line.delete(temp.cic_line_low)
+                    temp.cic_line_low := na
+        else
+            temp.deleteGap()
+
+        i += 1
+
+// ============================================================================
+// 8. MODULE 5: TRUE ORDERBLOCK (TOB) + RESTORED ORANGE MTOB ENGINE (FROM NOTEBOOK)
+// ============================================================================
+isNewHTFCandle = ta.change(time(pspParentTF)) != 0
+
+var int   curHTF_LastBearBar   = na, var float curHTF_LastBearOpen  = na, var float curHTF_LastBearHigh  = na, var float curHTF_LastBearLow   = na, var bool curHTF_BearConfirmed = false
+var int   curHTF_LastBullBar   = na, var float curHTF_LastBullOpen  = na, var float curHTF_LastBullHigh  = na, var float curHTF_LastBullLow   = na, var bool curHTF_BullConfirmed = false
+var int   prevHTF_LastBearBar  = na, var float prevHTF_LastBearOpen = na, var float prevHTF_LastBearHigh = na, var float prevHTF_LastBearLow  = na, var bool prevHTF_BearConfirmed = false
+var int   prevHTF_LastBullBar  = na, var float prevHTF_LastBullOpen = na, var float prevHTF_LastBullHigh = na, var float prevHTF_LastBullLow  = na, var bool prevHTF_BullConfirmed = false
+
+if isNewHTFCandle
+    prevHTF_LastBearBar   := curHTF_LastBearBar,  prevHTF_LastBearOpen  := curHTF_LastBearOpen
+    prevHTF_LastBearHigh  := curHTF_LastBearHigh, prevHTF_LastBearLow   := curHTF_LastBearLow
+    prevHTF_BearConfirmed := curHTF_BearConfirmed
+    prevHTF_LastBullBar   := curHTF_LastBullBar,  prevHTF_LastBullOpen  := curHTF_LastBullOpen
+    prevHTF_LastBullHigh  := curHTF_LastBullHigh, prevHTF_LastBullLow   := curHTF_LastBullLow
+    prevHTF_BullConfirmed := curHTF_BullConfirmed
+    curHTF_LastBearBar := na, curHTF_LastBearOpen := na, curHTF_LastBearHigh := na, curHTF_LastBearLow := na, curHTF_BearConfirmed := false
+    curHTF_LastBullBar := na, curHTF_LastBullOpen := na, curHTF_LastBullHigh := na, curHTF_LastBullLow := na, curHTF_BullConfirmed := false
+
+if isBear
+    curHTF_LastBearBar := bar_index, curHTF_LastBearOpen := open, curHTF_LastBearHigh := high, curHTF_LastBearLow := low, curHTF_BearConfirmed := false
+if not isBear and not na(curHTF_LastBearOpen) and close > curHTF_LastBearOpen
+    curHTF_BearConfirmed := true
+
+if isBull
+    curHTF_LastBullBar := bar_index, curHTF_LastBullOpen := open, curHTF_LastBullHigh := high, curHTF_LastBullLow := low, curHTF_BullConfirmed := false
+if not isBull and not na(curHTF_LastBullOpen) and close < curHTF_LastBullOpen
+    curHTF_BullConfirmed := true
+
+f_htfCandle2Data() =>
+    [open[1], high[1], low[1], close[1], high[2], low[2]]
+
+[htfO1, htfH1, htfL1, htfC1, htfH2, htfL2] = request.security(syminfo.tickerid, pspParentTF, f_htfCandle2Data(), lookahead=barmerge.lookahead_off)
+[p1_htfO1, _, _, p1_htfC1, _, _]           = request.security(peerSym1, pspParentTF, f_htfCandle2Data(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+[p2_htfO1, _, _, p2_htfC1, _, _]           = request.security(peerSym2, pspParentTF, f_htfCandle2Data(), lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+
+htfMainBull2   = not na(htfC1) and htfC1 > htfO1
+peerColorDiv   = (not na(p1_htfC1) and (htfMainBull2 != (p1_htfC1 > p1_htfO1))) or (not na(p2_htfC1) and (htfMainBull2 != (p2_htfC1 > p2_htfO1)))
+pspPassTriad   = not requireTriadPSP or peerColorDiv
+isBullPSPClose = isNewHTFCandle and not na(htfL1) and not na(htfL2) and (htfL1 < htfL2) and pspPassTriad
+isBearPSPClose = isNewHTFCandle and not na(htfH1) and not na(htfH2) and (htfH1 > htfH2) and pspPassTriad
+
+if showTOB and isBullPSPClose and not na(prevHTF_LastBearBar)
+    initStatus = prevHTF_BearConfirmed ? "+TOB\nCONFIRM" : "+TOB\nPENDING"
+    bBox = box.new(prevHTF_LastBearBar, prevHTF_LastBearHigh, bar_index + 3, prevHTF_LastBearLow, xloc=xloc.bar_index, bgcolor=color.new(#089981, 84), border_color=#089981, border_width=1, text=initStatus, text_color=#2a2e39, text_size=txtSize)
+    line tLn = showTOBLine ? line.new(prevHTF_LastBearBar, prevHTF_LastBearOpen, bar_index + 3, prevHTF_LastBearOpen, xloc=xloc.bar_index, color=#2a2e39, style=line.style_solid, width=1) : na
+    label tLb = showTOBLine ? label.new(bar_index + 3, prevHTF_LastBearOpen, " TOB", xloc=xloc.bar_index, style=label.style_none, textcolor=#2a2e39, size=txtSize) : na
+    array.push(tobZones, TrueOB.new(prevHTF_LastBearBar, prevHTF_LastBearHigh, prevHTF_LastBearLow, prevHTF_LastBearOpen, htfL1, true, prevHTF_BearConfirmed, false, 3, bBox, tLn, tLb, na))
+    if array.size(tobZones) > 8
+        oldT = array.shift(tobZones)
+        oldT.deleteTOB()
+
+if showTOB and isBearPSPClose and not na(prevHTF_LastBullBar)
+    initStatus = prevHTF_BullConfirmed ? "-TOB\nCONFIRM" : "-TOB\nPENDING"
+    bBox = box.new(prevHTF_LastBullBar, prevHTF_LastBullHigh, bar_index + 3, prevHTF_LastBullLow, xloc=xloc.bar_index, bgcolor=color.new(#ff5252, 84), border_color=#ff5252, border_width=1, text=initStatus, text_color=#4a4e5a, text_size=txtSize)
+    line tLn = showTOBLine ? line.new(prevHTF_LastBullBar, prevHTF_LastBullOpen, bar_index + 3, prevHTF_LastBullOpen, xloc=xloc.bar_index, color=#2a2e39, style=line.style_solid, width=1) : na
+    label tLb = showTOBLine ? label.new(bar_index + 3, prevHTF_LastBullOpen, " TOB", xloc=xloc.bar_index, style=label.style_none, textcolor=#2a2e39, size=txtSize) : na
+    array.push(tobZones, TrueOB.new(prevHTF_LastBullBar, prevHTF_LastBullHigh, prevHTF_LastBullLow, prevHTF_LastBullOpen, htfH1, false, prevHTF_BullConfirmed, false, 3, bBox, tLn, tLb, na))
+    if array.size(tobZones) > 8
+        oldT = array.shift(tobZones)
+        oldT.deleteTOB()
+
+var array<int> tobDead = array.new<int>()
+array.clear(tobDead)
+for [idx, tb] in tobZones
+    if isNewHTFCandle and bar_index > tb.startBar
+        tb.htfCandleCount += 1
+    if not tb.isConfirmed
+        valNow = tb.isBull ? (close > tb.openTrigger) : (close < tb.openTrigger)
+        if valNow
+            tb.isConfirmed := true
+            if not na(tb.b)
+                box.set_text(tb.b, tb.isBull ? "+TOB\nCONFIRM" : "-TOB\nCONFIRM")
+    retestZone = tb.isBull ? (low <= tb.openTrigger and high >= tb.bottom) : (high >= tb.openTrigger and low <= tb.top)
+    if tb.isConfirmed and not tb.entryTriggered and (tb.htfCandleCount == 3 or tb.htfCandleCount == 4) and retestZone
+        tb.entryTriggered := true
+        if showC3C4Entry
+            cTag = tb.htfCandleCount == 3 ? "C3 TOB Entry" : "C4 TOB Entry"
+            eCol = tb.isBull ? #089981 : #ff5252
+            eY   = tb.isBull ? (low - safeAtr * 0.15) : (high + safeAtr * 0.20)
+            tb.entryLbl := label.new(bar_index, eY, cTag, xloc=xloc.bar_index, style=label.style_none, textcolor=eCol, size=txtSize)
+    invalidPSP = tb.isBull ? (close < tb.pspInvalid) : (close > tb.pspInvalid)
+    removeNow  = invalidPSP or tb.htfCandleCount > 5
+    if removeNow
+        array.push(tobDead, idx)
+    if not removeNow
+        if not na(tb.b)
+            box.set_right(tb.b, bar_index + 2)
+            box.set_text_size(tb.b, txtSize)
+        if not na(tb.trigLine)
+            line.set_x2(tb.trigLine, bar_index + 2)
+        if not na(tb.trigLbl)
+            label.set_x(tb.trigLbl, bar_index + 2)
+            label.set_size(tb.trigLbl, txtSize)
+        if not na(tb.entryLbl)
+            label.set_size(tb.entryLbl, txtSize)
+
+if array.size(tobDead) > 0
+    for i = array.size(tobDead) - 1 to 0
+        dIdx = array.get(tobDead, i)
+        deadT = array.remove(tobZones, dIdx)
+        deadT.deleteTOB()
+
+// ============================================================================
+// 8B. RESTORED ORIGINAL ORANGE MTOB ENGINE (FROM NOTEBOOK SOURCES 10, 11 & 12)
+// ============================================================================
+f_findMSNRConfluence(float zTop, float zBot) =>
+    string conf = ""
+    if showMSNRLines and showQML and qmStage >= 3 and not na(qmLsP)
+        if qmLsP <= zTop and qmLsP >= zBot
+            conf := (qmDir == -1 ? "QMLSELL " : "QMLBUY ") + f_prettyTF(tf_Chart)
+    if conf == ""
+        for s in msnrSources
+            if s.levelPrice <= zTop and s.levelPrice >= zBot
+                conf := s.tfTag + " " + s.kind
+                break
+    if conf == ""
+        for o in msnrOCLs
+            if o.levelPrice <= zTop and o.levelPrice >= zBot
+                conf := o.tfTag + " " + o.kind
+                break
+    conf
+
+bullOBTrigger = isBull and isDisplacement and isBear[1] and close > high[1]
+bearOBTrigger = isBear and isDisplacement and isBull[1] and close < low[1]
+
+if showMTOB and bullOBTrigger
+    confTag = f_findMSNRConfluence(high[1], low[1])
+    newOB = MTOB.new(creationBar=bar_index - 1, top=high[1], bottom=low[1], isTested=false, transferBar=na, isBullish=true, confluenceTag=confTag)
+    array.push(mtobArray, newOB)
+    if array.size(mtobArray) > maxActiveMTOBs
+        oldOB = array.shift(mtobArray)
+        oldOB.deleteMTOB()
+
+if showMTOB and bearOBTrigger
+    confTag = f_findMSNRConfluence(high[1], low[1])
+    newOB = MTOB.new(creationBar=bar_index - 1, top=high[1], bottom=low[1], isTested=false, transferBar=na, isBullish=false, confluenceTag=confTag)
+    array.push(mtobArray, newOB)
+    if array.size(mtobArray) > maxActiveMTOBs
+        oldOB = array.shift(mtobArray)
+        oldOB.deleteMTOB()
+
+var array<int> mtobRemoveIndices = array.new<int>()
+array.clear(mtobRemoveIndices)
+
+for [idx, ob] in mtobArray
+    if bar_index > ob.creationBar
+        inZone = high >= ob.bottom and low <= ob.top
+        if not ob.isTested
+            if inZone
+                runningTrendOpposite = ob.isBullish ? isBull : isBear
+                if isDojiBar or runningTrendOpposite
+                    ob.hasCandidate := true
+                    ob.candidateBar := bar_index
+                    ob.candidateTop := high
+                    ob.candidateBot := low
+
+            obBroken = ob.isBullish ? (close < ob.bottom) : (close > ob.top)
+            if obBroken
+                currTestingMatch = inZone and (isDojiBar or (ob.isBullish ? isBull : isBear))
+                if currTestingMatch
+                    ob.deleteMTOB()
+                    ob.top := high
+                    ob.bottom := low
+                    ob.transferBar := bar_index
+                    ob.creationBar := bar_index
+                    ob.isTested := true
+                    ob.isBullish := not ob.isBullish
+                    ob.confluenceTag := f_findMSNRConfluence(high, low)
+                if not currTestingMatch and ob.hasCandidate
+                    ob.deleteMTOB()
+                    ob.top := ob.candidateTop
+                    ob.bottom := ob.candidateBot
+                    ob.transferBar := ob.candidateBar
+                    ob.creationBar := ob.candidateBar
+                    ob.isTested := true
+                    ob.isBullish := not ob.isBullish
+                    ob.confluenceTag := f_findMSNRConfluence(ob.candidateTop, ob.candidateBot)
+                if not currTestingMatch and not ob.hasCandidate
+                    array.push(mtobRemoveIndices, idx)
+
+        if ob.isTested and bar_index > ob.transferBar
+            mtobMitigated = ob.isBullish ? (close < ob.bottom) : (close > ob.top)
+            if mtobMitigated
+                array.push(mtobRemoveIndices, idx)
+
+    if showMTOB
+        ob.drawMTOB(bar_index, txtSize, colMTOBOrange, colBullOB, colBearOB)
+    if not showMTOB
+        ob.deleteMTOB()
+
+if array.size(mtobRemoveIndices) > 0
+    for i = array.size(mtobRemoveIndices) - 1 to 0
+        rIdx = array.get(mtobRemoveIndices, i)
+        deadOB = array.remove(mtobArray, rIdx)
+        deadOB.deleteMTOB()
+
+// ============================================================================
+// 9. MODULE 6: ON-CHART HMC INSTITUTIONAL SESSION BOXES (WORKS ON 1m TO 1H!)
+// ============================================================================
+nyTotalMins = nyH * 60 + nyM
+barDurMins  = timeframe.isminutes ? timeframe.multiplier : 60
+
+f_inNYWindow(int startMins, int endMins) =>
+    timeframe.isintraday and (nyTotalMins < endMins) and ((nyTotalMins + barDurMins) > startMins)
+
+inSymAnchor  = f_inNYWindow(0, 30)
+
+inWinTDO     = showWinTDO     and inSymAnchor
+inWinEU      = showWinEU      and f_inNYWindow(120, 240)
+inWinFund    = showWinFund    and f_inNYWindow(240, 420)
+inWinFed     = showWinFed     and f_inNYWindow(480, 540)
+inWinDTCC_AM = showWinDTCC_AM and f_inNYWindow(540, 585)
+inWinBRD     = showWinBRD     and f_inNYWindow(720, 780)
+inWinCLS     = showWinCLS     and f_inNYWindow(780, 900)
+inWinDTCC_PM = showWinDTCC_PM and f_inNYWindow(1200, 1245)
+
+f_manageHMCBox(bool activeNow, bool activePrev, HMCWindowBox curObj, string wTitle, color wCol) =>
+    HMCWindowBox res = curObj
+    if showHMCBoxes
+        startNew = activeNow and not activePrev
+        contWin  = activeNow and activePrev and not na(res)
+        if startNew
+            res := HMCWindowBox.new(bar_index, bar_index, high, low, wTitle, wCol, na, na)
+            res.updateHMC(txtSize)
+            array.push(hmcBoxList, res)
+            if array.size(hmcBoxList) > 20
+                oldHMC = array.shift(hmcBoxList)
+                oldHMC.deleteHMC()
+        if contWin
+            res.endBar := bar_index
+            res.hi     := math.max(res.hi, high)
+            res.lo     := math.min(res.lo, low)
+            res.updateHMC(txtSize)
+    res
+
+var HMCWindowBox boxTDO  = na
+var HMCWindowBox boxEU   = na
+var HMCWindowBox boxFund = na
+var HMCWindowBox boxFed  = na
+var HMCWindowBox boxDAM  = na
+var HMCWindowBox boxBRD  = na
+var HMCWindowBox boxCLS  = na
+var HMCWindowBox boxDPM  = na
+
+boxTDO  := f_manageHMCBox(inWinTDO,     inWinTDO[1],     boxTDO,  "TDO 00:00-00:30",  color.new(#fdd835, 86))
+boxEU   := f_manageHMCBox(inWinEU,      inWinEU[1],      boxEU,   "EU/RTGS 02-04",    color.new(#00bfa5, 88))
+boxFund := f_manageHMCBox(inWinFund,    inWinFund[1],    boxFund, "FUNDING 04-07",    color.new(#00bcd4, 88))
+boxFed  := f_manageHMCBox(inWinFed,     inWinFed[1],     boxFed,  "FEDWIRE 08-09",    color.new(#ff9800, 88))
+boxDAM  := f_manageHMCBox(inWinDTCC_AM, inWinDTCC_AM[1], boxDAM,  "DTCC AM 09:00",    color.new(#9c27b0, 88))
+boxBRD  := f_manageHMCBox(inWinBRD,     inWinBRD[1],     boxBRD,  "BRD 12-13",        color.new(#ff7043, 88))
+boxCLS  := f_manageHMCBox(inWinCLS,     inWinCLS[1],     boxCLS,  "CLS 13:00-15:00",  color.new(#2196f3, 86))
+boxDPM  := f_manageHMCBox(inWinDTCC_PM, inWinDTCC_PM[1], boxDPM,  "DTCC PM 20:00",    color.new(#e91e63, 88))
+
+var line  tdoLine = na, var label tdoLbl = na
+var line  twoLine = na, var label twoLbl = na
+
+isMidnight = nyH == 0 and nyM == 0 and (nyH[1] != 0 or nyM[1] != 0)
+isTueOpen  = nyDow == dayofweek.monday and nyH == 18 and nyM == 0 and (nyH[1] != 18 or nyM[1] != 0)
+
+if isMidnight and showDailySettle
+    line.delete(tdoLine), label.delete(tdoLbl)
+    tdoLine := line.new(bar_index, open, bar_index, open, xloc=xloc.bar_index, color=#5d606b, style=line.style_dashed, width=1)
+    tdoLbl  := label.new(bar_index, open, "  TDO", xloc=xloc.bar_index, style=label.style_none, textcolor=#5d606b, size=txtSize)
+
+if isTueOpen and showWeeklyReset
+    line.delete(twoLine), label.delete(twoLbl)
+    twoLine := line.new(bar_index, open, bar_index, open, xloc=xloc.bar_index, color=#165b68, style=line.style_dashed, width=1)
+    twoLbl  := label.new(bar_index, open, "  TWO", xloc=xloc.bar_index, style=label.style_none, textcolor=#165b68, size=txtSize)
+
+if not na(tdoLine)
+    line.set_x2(tdoLine, bar_index + 2)
+    label.set_x(tdoLbl, bar_index + 2)
+    label.set_size(tdoLbl, txtSize)
+if not na(twoLine)
+    line.set_x2(twoLine, bar_index + 2)
+    label.set_x(twoLbl, bar_index + 2)
+    label.set_size(twoLbl, txtSize)
+
+// ============================================================================
+// 10. MODULE 7: GAMBLER / FW SYMMETRY ZONES (BOTH BUY & SELL SIDES GUARANTEED)
+// ============================================================================
+var float mRangeHi   = na
+var float mRangeLo   = na
+var int   mStartBar  = na
+var bool  zonesBuilt = false
+
+if ta.change(time("D", "America/New_York")) != 0
+    mRangeHi := na, mRangeLo := na, mStartBar := na, zonesBuilt := false
+    for gz in gamblerZones
+        gz.deleteSym()
+    array.clear(gamblerZones)
+
+if inSymAnchor
+    if not inSymAnchor[1] or na(mStartBar)
+        mStartBar := bar_index, mRangeHi := high, mRangeLo := low
+    mRangeHi := math.max(mRangeHi, high)
+    mRangeLo := math.min(mRangeLo, low)
+
+f_symPrefix(string tierName, bool isSellSide) =>
+    basePfx = str.startswith(zoneNamingStyle, "FW") ? ("FW " + tierName) : ("GAMBLER " + tierName)
+    sideTag = isSellSide ? " (SELL)" : " (BUY)"
+    basePfx + sideTag
+
+f_createSymZone(int sBar, float mult1, float mult2, float rHi, float rSpan, bool isSellZone, string tierTitle, color zCol, bool hasMidLine) =>
+    p1     = rHi - (mult1 * rSpan)
+    p2     = rHi - (mult2 * rSpan)
+    zTop   = math.max(p1, p2)
+    zBot   = math.min(p1, p2)
+    zMid   = (zTop + zBot) * 0.5
+    invP   = isSellZone ? zTop : zBot
+    pxInfo = showSymPrices ? (" [" + str.tostring(zBot, format.mintick) + " - " + str.tostring(zTop, format.mintick) + "]  ") : "  "
+    lbl    = f_symPrefix(tierTitle, isSellZone) + pxInfo
+    brdCol = isSellZone ? color.new(#e53935, 45) : color.new(#1e88e5, 45)
+    bx     = box.new(sBar, zTop, bar_index + 4, zBot, xloc=xloc.bar_index, bgcolor=zCol, border_color=brdCol, border_width=1, text=lbl, text_color=#1e222d, text_size=txtSize, text_halign=text.align_right, text_valign=text.align_center)
+    line mLn = hasMidLine ? line.new(sBar, zMid, bar_index + 4, zMid, xloc=xloc.bar_index, color=brdCol, style=line.style_dotted, width=1) : na
+    array.push(gamblerZones, GamblerZone.new(sBar, zTop, zBot, zMid, invP, isSellZone, true, lbl, zCol, bx, mLn))
+    int(na)
+
+if showGamblerZones and not inSymAnchor and not zonesBuilt and not na(mRangeHi) and not na(mRangeLo) and (mRangeHi > mRangeLo)
+    zonesBuilt := true
+    span = mRangeHi - mRangeLo
+    if showOriginZone
+        f_createSymZone(mStartBar, -1.0, -1.5, mRangeHi, span, true,  "ORIGIN",  colOriginSell, false)
+        f_createSymZone(mStartBar, 2.0,  2.5,  mRangeHi, span, false, "ORIGIN",  colOriginBuy,  false)
+    if showShiftZone
+        f_createSymZone(mStartBar, -2.5, -3.0, mRangeHi, span, true,  "SHIFT",   colShiftSell,  false)
+        f_createSymZone(mStartBar, 3.5,  4.0,  mRangeHi, span, false, "SHIFT",   colShiftBuy,   false)
+    if showExtremeZone
+        f_createSymZone(mStartBar, -4.0, -4.5, mRangeHi, span, true,  "EXTREME", colExtremeSell, true)
+        f_createSymZone(mStartBar, 5.0,  5.5,  mRangeHi, span, false, "EXTREME", colExtremeBuy,  true)
+
+for gz in gamblerZones
+    if gz.isActive and not na(gz.zBox)
+        invalidated = gz.isSell ? (close > gz.invalidPrice) : (close < gz.invalidPrice)
+        killZone    = removeInvalidSym and invalidated
+        if killZone
+            gz.isActive := false
+            gz.deleteSym()
+        if not killZone
+            box.set_right(gz.zBox, bar_index + 4)
+            box.set_text_size(gz.zBox, txtSize)
+            if not na(gz.midLn)
+                line.set_x2(gz.midLn, bar_index + 4)
+
+// ============================================================================
+// 11. MODULE 8: MARKET BIAS, CRT PO3 STAGE, NAMDEV OCL PAIRING & HMC DASHBOARD
+// ============================================================================
+dashPosition = dashPosInput == "Top Right" ? position.top_right : (dashPosInput == "Bottom Left" ? position.bottom_left : position.bottom_right)
+var table biasDash = table.new(dashPosition, 2, 10, bgcolor=color.new(#f8f9fa, 8), border_color=color.new(#d1d4dc, 30), border_width=1)
+
+htfBias1H = close > nz(htf1_C, close) ? "BULLISH" : "BEARISH"
+htfBias4H = close > nz(htf2_C, close) ? "BULLISH" : "BEARISH"
+hmcActive = inWinCLS ? "CLS Settlement (13-15)" : (inWinEU ? "EU/RTGS (02-04)" : (inWinFund ? "Funding (04-07)" : (inWinFed ? "Fedwire (08-09)" : (inWinDTCC_AM ? "DTCC AM (09:00)" : (inWinBRD ? "BRD (12-13)" : (inSymAnchor ? "TDO Range (00-00:30)" : "Standard Flow"))))))
+crtStatus = not na(activeCRT) ? (activeCRT.stage == 3 ? (activeCRT.bullTS ? "PO3 C3 BUY (< Open)" : "PO3 C3 SELL (> Open)") : (activeCRT.stage == 2 ? (activeCRT.bullTS ? "C2 Bull TS Active" : "C2 Bear TS Active") : ("C1 Range (IB x" + str.tostring(activeCRT.insideCount) + ")"))) : "Scanning CRT"
+consensus = (htfBias1H == "BULLISH" and htfBias4H == "BULLISH") ? "BULLISH ALIGNED" : ((htfBias1H == "BEARISH" and htfBias4H == "BEARISH") ? "BEARISH ALIGNED" : "CONFLICT / NEUTRAL")
+consCol   = str.contains(consensus, "BULLISH") ? #1b8a5a : (str.contains(consensus, "BEARISH") ? #e53935 : #787b86)
+
+if showDashboard and barstate.islast
+    tSz = dashLayout == "Mobile" ? size.tiny : ribSize
+    table.cell(biasDash, 0, 0, "FW • MSNR + SMTF + MTOB + QML", bgcolor=#2a2e39, text_color=color.black, text_size=tSz)
+    table.cell(biasDash, 1, 0, chartClean + " (" + f_prettyTF(tf_Chart) + " | LTF " + f_prettyTF(tf_L2) + "/" + f_prettyTF(tf_L1) + " | HTF " + f_prettyTF(tf_H1) + "/" + f_prettyTF(tf_H2) + ")", bgcolor=#2a2e39, text_color=color.black, text_size=tSz)
+
+    table.cell(biasDash, 0, 1, "90m / Micro Cycle", text_color=#5d606b, text_size=tSz)
+    table.cell(biasDash, 1, 1, "Q" + str.tostring(q90) + " (" + amdxPhaseLetter + ") | Q" + str.tostring(qMicro) + " Micro", text_color=#2a2e39, text_size=tSz)
+
+    table.cell(biasDash, 0, 2, "Legacy CRT Status", text_color=#5d606b, text_size=tSz)
+    table.cell(biasDash, 1, 2, crtStatus, text_color=#165b68, text_size=tSz)
+
+    table.cell(biasDash, 0, 3, "MTF Bias (" + f_prettyTF(tf_H1) + "/" + f_prettyTF(tf_H2) + ")", text_color=#5d606b, text_size=tSz)
+    table.cell(biasDash, 1, 3, consensus, text_color=consCol, text_size=tSz)
+
+    int orangeMTOBCount = 0
+    for m in mtobArray
+        if m.isTested
+            orangeMTOBCount += 1
+
+    table.cell(biasDash, 0, 4, "TOB / Orange MTOB / MSNR", text_color=#5d606b, text_size=tSz)
+    table.cell(biasDash, 1, 4, str.tostring(array.size(tobZones)) + " TOB | " + str.tostring(orangeMTOBCount) + " Orange MTOB | " + str.tostring(array.size(msnrSources)) + " A/V", text_color=#2a2e39, text_size=tSz)
+
+    table.cell(biasDash, 0, 5, "SMT-Fill [Oracle] FVGs", text_color=#5d606b, text_size=tSz)
+    table.cell(biasDash, 1, 5, str.tostring(array.size(gaps)) + " Active Correlated Gaps", text_color=#089981, text_size=tSz)
+
+    table.cell(biasDash, 0, 6, "HMC Session Window", text_color=#5d606b, text_size=tSz)
+    table.cell(biasDash, 1, 6, hmcActive, text_color=#165b68, text_size=tSz)
+
+    if dashLayout == "Desktop"
+        table.cell(biasDash, 0, 7, "Gambler Sym (3 Sell / 3 Buy)", text_color=#5d606b, text_size=tSz)
+        table.cell(biasDash, 1, 7, zonesBuilt ? (str.tostring(array.size(gamblerZones)) + " Zones Active (00-00:30)") : "Wait 00:30 NY", text_color=#2a2e39, text_size=tSz)
+
+    // Quasimodo QML status + track record
+    qmSideTxt = qmDir == -1 ? "▼ QMLSELL" : "▲ QMLBUY"
+    qmStatusTxt = qmStage == 0 ? "Scanning (LS → Head → BOS)" : (qmStage == 3 ? (qmSideTxt + " • wait tap " + qmPx(qmLsP)) : (qmSideTxt + " • tapped, T1/T2 live"))
+    qmStatusCol = qmStage == 0 ? #787b86 : (qmDir == -1 ? #e53935 : #1b8a5a)
+    table.cell(biasDash, 0, 8, "Quasimodo QML", text_color=#5d606b, text_size=tSz)
+    table.cell(biasDash, 1, 8, qmStatusTxt, text_color=qmStatusCol, text_size=tSz)
+
+    if dashLayout == "Desktop"
+        qmNF  = array.sum(qmRForm)
+        qmNTp = array.sum(qmRTap)
+        qmNT1 = array.sum(qmRT1)
+        qmNT2 = array.sum(qmRT2)
+        qmNFl = array.sum(qmRFail)
+        table.cell(biasDash, 0, 9, "QM Track Record", text_color=#5d606b, text_size=tSz)
+        table.cell(biasDash, 1, 9, str.tostring(qmNF) + " QM | tap " + qmPct(qmNTp, qmNF) + " | T1 " + qmPct(qmNT1, qmNTp) + " | T2 " + qmPct(qmNT2, qmNTp) + " | broken " + qmPct(qmNFl, qmNTp), text_color=#2a2e39, text_size=tSz)
